@@ -1,0 +1,113 @@
+trainer:
+  ctx: &ctx 0
+  epochs: 150
+  batch_size: 16
+  workers: 4
+  hybridize: false
+  train_metrics:
+    - type: Loss
+      name: loss
+    - type: CustomLoss
+      λtransform_fn: "lambda loss: [l[0] for l in loss]"
+      name: box
+    - type: CustomLoss
+      λtransform_fn: "lambda loss: [l[1] for l in loss]"
+      name: conf
+    - type: CustomLoss
+      λtransform_fn: "lambda loss: [l[2] for l in loss]"
+      name: clz
+    - type: IoUMetric
+      name: iou
+    - type: IoURecall
+      iou_thres: 0.75
+      name: recall75
+detector:
+  type: YOLOv3
+  anchors: &anchors [ [ 33, 48, 50, 108, 127, 96 ],
+                      [ 78, 202, 178, 179, 130, 295 ],
+                      [ 332, 195, 228, 326, 366, 359 ] ]
+  strides: &strides [ 8, 16, 32 ]
+  num_class: &num_class 20
+  backbone_cfg:
+    backend: gluoncv
+    name: mobilenetv3_large
+    pretrained: true
+    ctx: *ctx
+    features:
+      - _resunit6_hardswish0__mul0
+      - _resunit12_hardswish0__mul0
+      - hardswish1__mul0
+  neck_cfg:
+    type: YOLOv3Neck
+    out_channels: [ 128, 256, 512 ]
+    norm_cfg:
+      type: BN
+    act_cfg:
+      type: LeakyReLU
+      alpha: 0.1
+  head_cfg:
+    type: YOLOv3Head
+    anchors: *anchors
+    strides: [ 8, 16, 32 ]
+    num_classes: 20
+loss:
+  type: YOLOv3Loss
+  class_num: *num_class
+  label_smooth: false
+  box_loss_cfg:
+    type: IoULoss
+    loss_type: giou
+    x1y1x2y2: true
+  conf_loss_cfg:
+    type: BCE
+  clz_loss_cfg:
+    type: BCE
+optimizer:
+  type: adam
+  optimizer_params:
+    learning_rate: 0.01
+    wd: 0.0001
+  lr_scheduler:
+    - mode: step
+      step_factor: 0.1
+      step_epoch: [ 10, 50 ]
+dataset:
+  train:
+    type: VOCDetectionRecordFile
+    #    filename: /Users/troy/Projects/Papers/mx-yolo/data/trainval.rec
+    filename: /home/troy/nuc/Projects/Papers/mx-yolo/data/trainval.rec
+  train_transform:
+    - type: ToNumpy
+    - type: Albumentations
+      transforms:
+        - type: HorizontalFlip
+          p: 0.5
+        - type: RandomBrightnessContrast
+          p: 0.3
+        - type: Resize
+          height: 416
+          width: 416
+      bbox_params:
+        format: pascal_voc
+    - type: ToTensor
+    - type: Normalize
+  test:
+    type: VOCDetectionRecordFile
+    #    filename: /Users/troy/Projects/Papers/mx-yolo/data/test.rec
+    filename: /home/troy/nuc/Projects/Papers/mx-yolo/data/test.rec
+    metric: voc07
+  test_transform:
+    - type: ToNumpy
+    - type: Albumentations
+      transforms:
+        - type: HorizontalFlip
+          p: 0.5
+        - type: RandomBrightnessContrast
+          p: 0.3
+        - type: Resize
+          height: 416
+          width: 416
+      bbox_params:
+        format: pascal_voc
+    - type: ToTensor
+    - type: Normalize
