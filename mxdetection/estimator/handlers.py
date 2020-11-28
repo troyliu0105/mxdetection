@@ -4,9 +4,9 @@ import os
 import coloredlogs
 import mxnet as mx
 import mxnet.autograd
-from mxnet.gluon.contrib.estimator.event_handler import CheckpointHandler
-from mxnet.gluon.contrib.estimator.event_handler import GradientUpdateHandler
-from mxnet.gluon.contrib.estimator.event_handler import TrainEnd, EpochEnd, BatchEnd, EpochBegin
+from mxcv.estimator.event_handler import CheckpointHandler
+from mxcv.estimator.event_handler import GradientUpdateHandler
+from mxcv.estimator.event_handler import TrainEnd, EpochEnd, BatchEnd, EpochBegin
 
 __all__ = ['GradientAccumulateUpdateHandler',
            'ExportBestSymbolModelHandler',

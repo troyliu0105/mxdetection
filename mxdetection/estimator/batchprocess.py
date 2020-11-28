@@ -1,7 +1,8 @@
 from gluoncv.utils import split_and_load
 from mxnet import autograd
-from mxnet.gluon.contrib.estimator import BatchProcessor as BaseBatchProcessor
-from mxnet.gluon.contrib.estimator.event_handler import EpochBegin
+
+from mxcv.estimator import BatchProcessor as BaseBatchProcessor
+from mxcv.estimator.event_handler import EpochBegin
 
 __all__ = ['BatchIterProcessor']
 

@@ -5,7 +5,7 @@ sys.path.append(os.curdir)
 import yaml
 from absl import app, flags, logging
 from gluoncv.data.batchify import Tuple, Stack, Pad
-from mxnet.gluon.contrib.estimator import Estimator, CheckpointHandler, ValidationHandler, LoggingHandler
+from mxcv.estimator import Estimator, CheckpointHandler, ValidationHandler, LoggingHandler
 from mxnet.gluon.data import DataLoader
 
 from mxcv.utils.parser import postprocess
