@@ -44,7 +44,7 @@ class YOLOv3(ABCDetector):
         self.bbox2center = BBoxCornerToCenter(axis=-1, split=True)
         self.bbox2corner = BBoxCenterToCorner(axis=-1, split=False)
 
-    def hybrid_forward(self, F, x: Union[mx.nd.NDArray, mx.sym.Symbol]):
+    def hybrid_forward(self, F, x: Union[mx.nd.NDArray, mx.sym.Symbol], *args, **kwargs):
         x = self.backbone(x)
         x = self.neck(x)
         x = self.head(x)
@@ -82,7 +82,7 @@ class YOLOv3(ABCDetector):
             nd.zeros((B, H // stride, W // stride, len(anchors) // 2, 4))
             for anchors, stride in zip(self._anchors, self._strides)]
         weights: List[NDArray] = [
-            nd.zeros((B, H // stride, W // stride, len(anchors) // 2, 1))
+            nd.zeros((B, H // stride, W // stride, len(anchors) // 2, 2))
             for anchors, stride in zip(self._anchors, self._strides)]
         bbox_targets: List[NDArray] = [nd.zeros_like(cst) for cst in center_scale_targets]
         clz_target: List[NDArray] = [
@@ -129,7 +129,7 @@ class YOLOv3(ABCDetector):
                 center_scale_targets[nLayer][b, loc_y, loc_x, nAnchor, 1] = gty / H * grid_h - loc_y
                 center_scale_targets[nLayer][b, loc_y, loc_x, nAnchor, 2] = np.log(max(gtw, 1) / np_anchors[m, 0])
                 center_scale_targets[nLayer][b, loc_y, loc_x, nAnchor, 3] = np.log(max(gth, 1) / np_anchors[m, 1])
-                weights[nLayer][b, loc_y, loc_x, nAnchor, 0] = 2. - (gtw * gth) / (W * H)
+                weights[nLayer][b, loc_y, loc_x, nAnchor, :] = 2. - (gtw * gth) / (W * H)
 
                 bbox_targets[nLayer][b, loc_y, loc_x, nAnchor, 0] = gtx
                 bbox_targets[nLayer][b, loc_y, loc_x, nAnchor, 1] = gty

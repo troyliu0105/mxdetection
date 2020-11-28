@@ -69,7 +69,8 @@ class IoUMetric(EvalMetric):
     def get_iou(self, labels, preds):
         ious = []
         for label, pred in zip(labels, preds):
-            pos_mask = label[2].slice_axis(axis=-1, begin=0, end=1)
+            # pos_mask = label[2].slice_axis(axis=-1, begin=0, end=1)
+            pos_mask = label[3].slice_axis(axis=-1, begin=0, end=1)
             pos_mask = pos_mask.reshape(-1)
             pred_bboxes = nd.contrib.boolean_mask(pred[0].reshape(-1, 4), pos_mask)
             target_bboxes = nd.contrib.boolean_mask(label[0].reshape(-1, 4), pos_mask)
@@ -80,7 +81,7 @@ class IoUMetric(EvalMetric):
     def update(self, labels, preds):
         ious = self.get_iou(labels, preds)
         for iou in ious:
-            self.sum += iou.sum().asscalar()
+            self.sum += iou.nansum().asscalar()
             self.count += iou.shape[0]
 
     def get(self):

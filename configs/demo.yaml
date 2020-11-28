@@ -2,8 +2,11 @@ trainer:
   ctx: &ctx 0
   epochs: 150
   batch_size: 16
-  workers: 4
-  hybridize: false
+  workers: 6
+  hybridize: true
+  log_interval: 100
+  val_interval: 1
+  accumulate: 1
   train_metrics:
     - type: Loss
       name: loss
@@ -52,30 +55,29 @@ detector:
     num_classes: 20
 loss:
   type: YOLOv3Loss
-  class_num: *num_class
-  label_smooth: false
-  box_loss_cfg:
-    type: IoULoss
-    loss_type: giou
-    x1y1x2y2: true
-  conf_loss_cfg:
-    type: BCE
-  clz_loss_cfg:
-    type: BCE
+#  class_num: *num_class
+#  label_smooth: false
 optimizer:
   type: adam
   optimizer_params:
-    learning_rate: 0.01
+    learning_rate: &lr 0.001
     wd: 0.0001
   lr_scheduler:
+    - mode: linear
+      base_lr: 0
+      target_lr: *lr
+      nepochs: 3
+      # 16551 / batch_size
+      iters_per_epoch: &iters_epoch 1035
     - mode: step
+      base_lr: *lr
+      iters_per_epoch: *iters_epoch
       step_factor: 0.1
-      step_epoch: [ 10, 50 ]
+      step_epoch: [ 120, 135 ]
 dataset:
   train:
     type: VOCDetectionRecordFile
-    #    filename: /Users/troy/Projects/Papers/mx-yolo/data/trainval.rec
-    filename: /home/troy/nuc/Projects/Papers/mx-yolo/data/trainval.rec
+    filename: data/trainval.rec
   train_transform:
     - type: ToNumpy
     - type: Albumentations
@@ -91,19 +93,18 @@ dataset:
         format: pascal_voc
     - type: ToTensor
     - type: Normalize
+    - type: YOLOv3TargetGenerator
+      num_class: 20
+      strides: *strides
+      anchors: *anchors
   test:
     type: VOCDetectionRecordFile
-    #    filename: /Users/troy/Projects/Papers/mx-yolo/data/test.rec
-    filename: /home/troy/nuc/Projects/Papers/mx-yolo/data/test.rec
+    filename: data/test.rec
     metric: voc07
   test_transform:
     - type: ToNumpy
     - type: Albumentations
       transforms:
-        - type: HorizontalFlip
-          p: 0.5
-        - type: RandomBrightnessContrast
-          p: 0.3
         - type: Resize
           height: 416
           width: 416

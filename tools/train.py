@@ -32,19 +32,23 @@ def train(argv):
     optimizer = estimator.build_optimizer(cfg.pop('optimizer'), net)
 
     data_cfg = cfg.pop('dataset')
-    batchify = Tuple([Stack(), Pad(axis=0, pad_val=-1)])
+    # batchify = Tuple([Stack(), Pad(axis=0, pad_val=-1)])
+    batchify = Tuple(*([Stack() for _ in range(7)] + [Pad(axis=0, pad_val=-1) for _ in
+                                                      range(1)]))
     train_dataset = build_dataset(data_cfg.pop('train'))
     train_dataset = train_dataset.transform(build_transformers(data_cfg.pop('train_transform')))
     val_dataset, val_metric = build_dataset(data_cfg.pop('test'))
     val_dataset = val_dataset.transform(build_transformers(data_cfg.pop('test_transform')))
 
     train_dataloader = DataLoader(train_dataset, trainer_cfg['batch_size'],
-                                  shuffle=True, last_batch="rollover", batchify_fn=batchify,
+                                  shuffle=True, last_batch="rollover",
+                                  batchify_fn=batchify,
                                   num_workers=trainer_cfg['workers'], pin_memory=True,
                                   timeout=60 * 60,
                                   thread_pool=False)
     val_dataloader = DataLoader(val_dataset, trainer_cfg['batch_size'],
-                                shuffle=False, last_batch='keep', batchify_fn=batchify,
+                                shuffle=False, last_batch='keep',
+                                batchify_fn=Tuple(Stack(), Pad(axis=0, pad_val=-1)),
                                 num_workers=trainer_cfg['workers'], pin_memory=True,
                                 timeout=60 * 60,
                                 thread_pool=False)
@@ -82,17 +86,17 @@ def train(argv):
         # estimator.StoppingOnNanHandler(),
         ValidationHandler(val_dataloader,
                           eval_fn=trainer.evaluate,
-                          epoch_period=1,
+                          epoch_period=trainer_cfg['val_interval'],
                           event_handlers=processor),
-        LoggingHandler(log_interval=10,
+        LoggingHandler(log_interval=trainer_cfg['log_interval'],
                        metrics=train_metrics),
-        estimator.GradientAccumulateUpdateHandler(1),
+        estimator.GradientAccumulateUpdateHandler(trainer_cfg['accumulate']),
         processor
     ]
     trainer.fit(train_dataloader,
                 val_dataloader,
                 event_handlers=train_handlers,
-                epochs=10,
+                epochs=trainer_cfg['epochs'],
                 # batches=2
                 )
 

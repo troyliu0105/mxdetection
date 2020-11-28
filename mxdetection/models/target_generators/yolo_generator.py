@@ -13,9 +13,9 @@ def _find_layer_and_anchor_idx(anchors: List[List[List[int]]],
                                idx: int):
     assert idx >= 0
     for i, anchors_in_layer in enumerate(anchors):
-        if idx < len(anchors_in_layer):
+        if idx < len(anchors_in_layer) // 2:
             return i, idx
-        idx -= anchors_in_layer
+        idx -= len(anchors_in_layer) // 2
 
 
 # class YOLOv3TargetGenerator(gluon.Block):
@@ -123,7 +123,7 @@ class YOLOv3TargetGenerator(gluon.Block):
     def __init__(self,
                  num_class: int,
                  strides: List[int],
-                 anchors: List[List[List[int]]],
+                 anchors: List[List[int]],
                  **kwargs):
         super(YOLOv3TargetGenerator, self).__init__(**kwargs)
         self._num_classes = num_class
@@ -164,7 +164,7 @@ class YOLOv3TargetGenerator(gluon.Block):
         gtx, gty, gtw, gth = self.bbox2center(gt_boxes)
         shift_gt_boxes = nd.concat(-0.5 * gtw, -0.5 * gth, 0.5 * gtw, 0.5 * gth, dim=-1)
 
-        anchors = nd.concat(*[nd.array(an) for an in self._anchors], dim=0)
+        anchors = nd.concat(*[nd.array(an).reshape(-1, 2) for an in self._anchors], dim=0)
         anchor_boxes = mx.nd.concat(0 * anchors, anchors, dim=-1)  # zero center anchors
         shift_anchor_boxes = self.bbox2corner(anchor_boxes)
 
@@ -183,13 +183,13 @@ class YOLOv3TargetGenerator(gluon.Block):
         for i, m in enumerate(matches):
             if valid_gts[i] < 1:
                 break
+            gtx, gty, gtw, gth = (np_gtx[i, 0], np_gty[i, 0],
+                                  np_gtw[i, 0], np_gth[i, 0])
             nLayer, nAnchor = _find_layer_and_anchor_idx(self._anchors, m)
             grid_w = W // self._strides[nLayer]
             grid_h = H // self._strides[nLayer]
             loc_x = int(gtx / W * grid_w)
             loc_y = int(gty / H * grid_h)
-            gtx, gty, gtw, gth = (np_gtx[i, 0], np_gty[i, 0],
-                                  np_gtw[i, 0], np_gth[i, 0])
 
             center_scale_targets[nLayer][loc_y, loc_x, nAnchor, 0] = gtx / W * grid_w - loc_x
             center_scale_targets[nLayer][loc_y, loc_x, nAnchor, 1] = gty / H * grid_h - loc_y
@@ -205,7 +205,7 @@ class YOLOv3TargetGenerator(gluon.Block):
             conf = np_gt_mixratios[i, 0] if np_gt_mixratios is not None else 1
             clz_target[nLayer][loc_y, loc_x, nAnchor, 0] = conf
             clz_target[nLayer][loc_y, loc_x, nAnchor, 1:] = 0.
-            clz_target[nLayer][loc_y, loc_x, nAnchor, 1 + int(np_gt_ids[i, 0])] = 1.
+            clz_target[nLayer][loc_y, loc_x, nAnchor, 1 + int(np_gt_ids[i])] = 1.
 
         center_scale_targets = [nd.expand_dims(x, axis=0).reshape((0, -1, 4)) for x in center_scale_targets]
         center_scale_targets = nd.concat(*center_scale_targets, dim=1)
@@ -221,23 +221,17 @@ class YOLOv3TargetGenerator(gluon.Block):
 
 if __name__ == '__main__':
     def _test():
-        generator = YOLOv3TargetGenerator(20)
-        img = nd.random_normal(shape=(1, 3, 416, 416))
-        xs = [nd.random_normal(shape=(1, 75, s, s)) for s in (13, 26, 52)]
-        anchors = nd.array([[332, 195],
-                            [228, 326],
-                            [366, 359],
-                            [78, 202],
-                            [178, 179],
-                            [130, 295],
-                            [33, 48],
-                            [50, 108],
-                            [127, 96]])
-        gt_box = nd.array([[[180.13945, 96.6639, 416., 379.75104],
-                            [0, 150, 100, 200]]])
-        gt_ids = nd.array([[[7.], [8.]]])
-        bbox_targets, clz_target = generator(img, xs, anchors, gt_box, gt_ids)
-        print(clz_target[..., 0] == 1)
+        anchors = [[33, 48, 50, 108, 127, 96],
+                   [78, 202, 178, 179, 130, 295],
+                   [332, 195, 228, 326, 366, 359]]
+        strides = [8, 16, 32]
+        generator = YOLOv3TargetGenerator(20, strides, anchors)
+        img = nd.random_normal(shape=(3, 416, 416))
+        gt_box = nd.array([[50, 50, 100., 100, 1],
+                           [0, 150, 100, 200, 2]])
+        args = generator(img, gt_box)
+        nd.save('out', list(args))
+        print(args)
 
 
     _test()
