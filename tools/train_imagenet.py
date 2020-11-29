@@ -1,6 +1,5 @@
 import argparse
 import logging
-import math
 import os
 import time
 
@@ -9,12 +8,15 @@ import gluoncv as gcv
 import mxnet as mx
 import numpy as np
 import tqdm
+from gluoncv.data import RandomTransformDataLoader
 from gluoncv.data import imagenet
-from gluoncv2.model_provider import get_model as glcv2_get_model
+from gluoncv.model_zoo import get_model as glcv_get_model
 from gluoncv.utils import makedirs, LRSequential, LRScheduler
+from gluoncv2.model_provider import get_model as glcv2_get_model
 from mxnet import autograd as ag
 from mxnet import gluon, nd
 from mxnet.contrib import amp
+from mxnet.gluon.data.vision import ImageRecordDataset
 from mxnet.gluon.data.vision import transforms
 
 
@@ -25,12 +27,8 @@ def parse_args():
                         help='training and validation pictures to use.')
     parser.add_argument('--rec-train', type=str, default='~/.mxnet/datasets/imagenet/rec/train.rec',
                         help='the training data')
-    parser.add_argument('--rec-train-idx', type=str, default='~/.mxnet/datasets/imagenet/rec/train.idx',
-                        help='the index of training data')
     parser.add_argument('--rec-val', type=str, default='~/.mxnet/datasets/imagenet/rec/val.rec',
                         help='the validation data')
-    parser.add_argument('--rec-val-idx', type=str, default='~/.mxnet/datasets/imagenet/rec/val.idx',
-                        help='the index of validation data')
     parser.add_argument('--use-rec', action='store_true',
                         help='use image record iter for data input. default is false.')
     parser.add_argument('--batch-size', type=int, default=32,
@@ -47,6 +45,8 @@ def parse_args():
                         help='momentum value for optimizer, default is 0.9.')
     parser.add_argument('--wd', type=float, default=0.0001,
                         help='weight decay rate. default is 0.0001.')
+    parser.add_argument('--multi-scale', action='store_true',
+                        help='use multi scale transform')
     parser.add_argument('--lr-mode', type=str, default='step',
                         help='learning rate scheduler mode. options are step, poly and cosine.')
     parser.add_argument('--lr-decay', type=float, default=0.1,
@@ -65,6 +65,8 @@ def parse_args():
                         help='mode in which to train the model. options are symbolic, imperative, hybrid')
     parser.add_argument('--model', type=str, required=True,
                         help='type of model to use. see vision_model for options.')
+    parser.add_argument('--model-backend', type=str, default='gluoncv',
+                        help='model zoo backend')
     parser.add_argument('--input-size', type=int, default=224,
                         help='size of the input image size. default is 224')
     parser.add_argument('--crop-ratio', type=float, default=0.875,
@@ -85,6 +87,10 @@ def parse_args():
                         help='whether to remove weight decay on bias, and beta/gamma for batchnorm layers.')
     parser.add_argument('--teacher', type=str, default=None,
                         help='teacher model for distillation training')
+    parser.add_argument('--teacher-backend', type=str, default='gluoncv',
+                        help='model zoo backend')
+    parser.add_argument('--teacher-imgsize', type=int, default=224,
+                        help='teacher model input size')
     parser.add_argument('--temperature', type=float, default=20,
                         help='temperature parameter for distillation teacher model')
     parser.add_argument('--hard-weight', type=float, default=0.5,
@@ -119,13 +125,12 @@ def parse_args():
 def main():
     opt = parse_args()
 
-    # filehandler = logging.FileHandler(opt.logging_file)
+    filehandler = logging.FileHandler(opt.logging_file, mode='a+')
     # streamhandler = logging.StreamHandler()
 
-    logging.basicConfig(filename=opt.logging_file, filemode='a+',
-                        level=logging.DEBUG)
-    logger = logging.getLogger('')
-    # logger.addHandler(filehandler)
+    logger = logging.getLogger('ImageNet')
+    logger.setLevel(level=logging.DEBUG)
+    logger.addHandler(filehandler)
     # logger.addHandler(streamhandler)
 
     logger.info(opt)
@@ -176,7 +181,7 @@ def main():
     if opt.last_gamma:
         kwargs['last_gamma'] = True
 
-    optimizer = 'nag'
+    optimizer = 'sgd'
     optimizer_params = {'wd': opt.wd,
                         'momentum': opt.momentum,
                         'lr_scheduler': lr_scheduler,
@@ -185,7 +190,12 @@ def main():
     #     optimizer_params['multi_precision'] = True
 
     # net = get_model(model_name, **kwargs)
-    net = glcv2_get_model(model_name, **kwargs)
+    if opt.model_backend == 'gluoncv':
+        net = glcv_get_model(model_name, **kwargs)
+    elif opt.model_backend == 'gluoncv2':
+        net = glcv2_get_model(model_name, **kwargs)
+    else:
+        raise ValueError(f'Unknown backend: {opt.model_backend}')
     # net.cast(opt.dtype)
     if opt.resume_params != '':
         net.load_parameters(opt.resume_params, ctx=context, cast_dtype=True)
@@ -193,124 +203,91 @@ def main():
     # teacher model for distillation training
     if opt.teacher is not None and opt.hard_weight < 1.0:
         teacher_name = opt.teacher
-        teacher = glcv2_get_model(teacher_name, pretrained=True, classes=classes, ctx=context)
+        if opt.teacher_backend == 'gluoncv':
+            teacher = glcv_get_model(teacher_name, **kwargs)
+        elif opt.teacher_backend == 'gluoncv2':
+            teacher = glcv2_get_model(teacher_name, **kwargs)
+        else:
+            raise ValueError(f'Unknown backend: {opt.teacher_backend}')
         # teacher = glcv2_get_model(teacher_name, pretrained=True, ctx=context)
         # teacher.cast(opt.dtype)
+        teacher.collect_params().setattr('grad_req', 'null')
         distillation = True
     else:
         distillation = False
 
     # Two functions for reading data from record file or raw images
-    def get_data_rec(rec_train, rec_train_idx,
-                     rec_val, rec_val_idx,
-                     batch_size, num_workers):
+    def get_data_rec(rec_train,
+                     rec_val):
         rec_train = os.path.expanduser(rec_train)
-        rec_train_idx = os.path.expanduser(rec_train_idx)
         rec_val = os.path.expanduser(rec_val)
-        rec_val_idx = os.path.expanduser(rec_val_idx)
-        jitter_param = 0.4
-        lighting_param = 0.1
-        input_size = opt.input_size
-        crop_ratio = opt.crop_ratio if opt.crop_ratio > 0 else 0.875
-        resize = int(math.ceil(input_size / crop_ratio))
-        mean_rgb = [123.68, 116.779, 103.939]
-        std_rgb = [58.393, 57.12, 57.375]
 
-        def batch_fn(batch, ctx):
-            data = gluon.utils.split_and_load(batch.data[0], ctx_list=ctx, batch_axis=0)
-            label = gluon.utils.split_and_load(batch.label[0], ctx_list=ctx, batch_axis=0)
-            return data, label
+        # mean_rgb = [123.68, 116.779, 103.939]
+        # std_rgb = [58.393, 57.12, 57.375]
 
-        train_data = mx.io.ImageRecordIter(
-            path_imgrec=rec_train,
-            path_imgidx=rec_train_idx,
-            preprocess_threads=num_workers,
-            prefetch_buffer=num_workers * 4,
-            shuffle=True,
-            batch_size=batch_size,
+        train_dataset = ImageRecordDataset(filename=rec_train, flag=1)
+        val_dataset = ImageRecordDataset(filename=rec_val, flag=1)
+        return train_dataset, val_dataset
 
-            data_shape=(3, input_size, input_size),
-            mean_r=mean_rgb[0],
-            mean_g=mean_rgb[1],
-            mean_b=mean_rgb[2],
-            std_r=std_rgb[0],
-            std_g=std_rgb[1],
-            std_b=std_rgb[2],
-            inter_method=10,
-            rand_mirror=True,
-            random_resized_crop=True,
-            max_aspect_ratio=4. / 3.,
-            min_aspect_ratio=3. / 4.,
-            max_random_area=1,
-            min_random_area=0.08,
-            brightness=jitter_param,
-            saturation=jitter_param,
-            contrast=jitter_param,
-            pca_noise=lighting_param,
-        )
-        val_data = mx.io.ImageRecordIter(
-            path_imgrec=rec_val,
-            path_imgidx=rec_val_idx,
-            preprocess_threads=num_workers,
-            prefetch_buffer=num_workers * 4,
-            shuffle=False,
-            batch_size=batch_size,
+    def get_data_loader(data_dir):
+        train_dataset = imagenet.classification.ImageNet(data_dir, train=True)
+        val_dataset = imagenet.classification.ImageNet(data_dir, train=False)
+        return train_dataset, val_dataset
 
-            resize=resize,
-            data_shape=(3, input_size, input_size),
-            mean_r=mean_rgb[0],
-            mean_g=mean_rgb[1],
-            mean_b=mean_rgb[2],
-            std_r=std_rgb[0],
-            std_g=std_rgb[1],
-            std_b=std_rgb[2],
-        )
-        return train_data, val_data, batch_fn
-
-    def get_data_loader(data_dir, batch_size, num_workers):
-        normalize = transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-        jitter_param = 0.4
-        lighting_param = 0.1
-        input_size = opt.input_size
-        crop_ratio = opt.crop_ratio if opt.crop_ratio > 0 else 0.875
-        resize = int(math.ceil(input_size / crop_ratio))
-
-        def batch_fn(batch, ctx):
-            data = gluon.utils.split_and_load(batch[0], ctx_list=ctx, batch_axis=0)
-            label = gluon.utils.split_and_load(batch[1], ctx_list=ctx, batch_axis=0)
-            return data, label
-
-        transform_train = transforms.Compose([
-            transforms.RandomResizedCrop(input_size),
-            transforms.RandomFlipLeftRight(),
-            transforms.RandomColorJitter(brightness=jitter_param, contrast=jitter_param,
-                                         saturation=jitter_param),
-            transforms.RandomLighting(lighting_param),
-            transforms.ToTensor(),
-            normalize
-        ])
-        transform_test = transforms.Compose([
-            transforms.Resize(resize, keep_ratio=True),
-            transforms.CenterCrop(input_size),
-            transforms.ToTensor(),
-            normalize
-        ])
-
-        train_data = gluon.data.DataLoader(
-            imagenet.classification.ImageNet(data_dir, train=True).transform_first(transform_train),
-            batch_size=batch_size, shuffle=True, last_batch='discard', num_workers=num_workers)
-        val_data = gluon.data.DataLoader(
-            imagenet.classification.ImageNet(data_dir, train=False).transform_first(transform_test),
-            batch_size=batch_size, shuffle=False, num_workers=num_workers)
-
-        return train_data, val_data, batch_fn
+    def batch_fn(batch, ctx):
+        data = gluon.utils.split_and_load(batch[0], ctx_list=ctx, batch_axis=0)
+        label = gluon.utils.split_and_load(batch[1], ctx_list=ctx, batch_axis=0)
+        return data, label
 
     if opt.use_rec:
-        train_data, val_data, batch_fn = get_data_rec(opt.rec_train, opt.rec_train_idx,
-                                                      opt.rec_val, opt.rec_val_idx,
-                                                      batch_size, num_workers)
+        train_dataset, val_dataset = get_data_rec(opt.rec_train, opt.rec_train_idx)
     else:
-        train_data, val_data, batch_fn = get_data_loader(opt.data_dir, batch_size, num_workers)
+        train_dataset, val_dataset = get_data_loader(opt.data_dir)
+
+    normalize = transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+    jitter_param = 0.4
+    lighting_param = 0.1
+    if not opt.multi_scale:
+        train_dataset = train_dataset.transform_first(
+            transforms.Compose([
+                transforms.RandomResizedCrop(opt.input_size),
+                transforms.RandomFlipLeftRight(),
+                transforms.RandomColorJitter(brightness=jitter_param, contrast=jitter_param,
+                                             saturation=jitter_param),
+                transforms.RandomLighting(lighting_param),
+                transforms.ToTensor(),
+                normalize
+            ])
+        )
+        train_data = gluon.data.DataLoader(
+            train_dataset, batch_size=batch_size, shuffle=True, pin_memory=True,
+            last_batch='rollover', num_workers=num_workers)
+    else:
+        train_data = RandomTransformDataLoader([
+            transforms.Compose([
+                # transforms.RandomResizedCrop(opt.input_size),
+                transforms.RandomResizedCrop(x * 32),
+                transforms.RandomFlipLeftRight(),
+                transforms.RandomColorJitter(brightness=jitter_param, contrast=jitter_param,
+                                             saturation=jitter_param),
+                transforms.RandomLighting(lighting_param),
+                transforms.ToTensor(),
+                normalize
+            ]) for x in range(10, 20)],
+            train_dataset, interval=10 * opt.accumulate,
+            batch_size=batch_size, shuffle=False, pin_memory=True,
+            last_batch='rollover', num_workers=num_workers)
+    val_dataset = val_dataset.transform_first(
+        transforms.Compose([
+            transforms.Resize(opt.input_size, keep_ratio=True),
+            transforms.CenterCrop(opt.input_size),
+            transforms.ToTensor(),
+            normalize
+        ])
+    )
+    val_data = gluon.data.DataLoader(
+        val_dataset, batch_size=batch_size, shuffle=False, pin_memory=True,
+        last_batch='keep', num_workers=num_workers)
 
     if opt.mixup:
         train_metric = mx.metric.RMSE()
@@ -352,7 +329,7 @@ def main():
             val_data.reset()
         acc_top1.reset()
         acc_top5.reset()
-        for i, batch in enumerate(val_data):
+        for i, batch in tqdm.tqdm(enumerate(val_data), desc='Validating'):
             data, label = batch_fn(batch, ctx)
             # outputs = [net(X.astype(opt.dtype, copy=False)) for X in data]
             outputs = [net(X) for X in data]
@@ -401,10 +378,11 @@ def main():
 
         best_val_score = 1
 
+        # err_top1_val, err_top5_val = test(ctx, val_data)
+        # logger.info('initial validation: err-top1=%f err-top5=%f' % (err_top1_val, err_top5_val))
+
         for epoch in range(opt.resume_epoch, opt.num_epochs):
             tic = time.time()
-            if opt.use_rec:
-                train_data.reset()
             train_metric.reset()
             train_loss_metric.reset()
             btic = time.time()
@@ -431,7 +409,11 @@ def main():
                 if distillation:
                     # teacher_prob = [nd.softmax(teacher(X.astype(opt.dtype, copy=False)) / opt.temperature) \
                     #                 for X in data]
-                    teacher_prob = [nd.softmax(teacher(X) / opt.temperature) for X in data]
+                    with ag.predict_mode():
+                        teacher_prob = [nd.softmax(teacher(
+                            nd.transpose(nd.image.resize(nd.transpose(X, (0, 2, 3, 1)),
+                                                         size=opt.teacher_imgsize), (0, 3, 1, 2))) / opt.temperature)
+                                        for X in data]
 
                 with ag.record():
                     # outputs = [net(X.astype(opt.dtype, copy=False)) for X in data]
@@ -440,6 +422,7 @@ def main():
                         # loss = [L(yhat.astype('float32', copy=False),
                         #           y.astype('float32', copy=False),
                         #           p.astype('float32', copy=False)) for yhat, y, p in zip(outputs, label, teacher_prob)]
+                        # print([outputs, label, teacher_prob])
                         loss = [L(yhat, y, p) for yhat, y, p in zip(outputs, label, teacher_prob)]
                     else:
                         # loss = [L(yhat, y.astype(opt.dtype, copy=False)) for yhat, y in zip(outputs, label)]
@@ -471,10 +454,10 @@ def main():
                 _, loss_score = train_loss_metric.get()
                 train_metric_name, train_metric_score = train_metric.get()
                 samplers_per_sec = batch_size / (time.time() - btic)
-                pbar.set_postfix_str(f'{samplers_per_sec:.1f} samples/sec, '
+                pbar.set_postfix_str(f'{samplers_per_sec:.1f} imgs/sec, '
                                      f'loss: {loss_score:.4f}, '
                                      f'acc: {train_metric_score * 100:.2f}, '
-                                     f'lr: {trainer.learning_rate:.3e}')
+                                     f'lr: {trainer.learning_rate:.4e}')
                 pbar.update()
                 btic = time.time()
                 if opt.log_interval and not (i + 1) % opt.log_interval:
