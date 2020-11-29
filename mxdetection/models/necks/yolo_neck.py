@@ -50,10 +50,12 @@ class YOLOv3Neck(nn.HybridBlock):
                  norm_cfg=dict(type='BN', requires_grad=True),
                  act_cfg=dict(type='LeakyReLU', negative_slope=0.1),
                  **kwargs):
+        if 'prefix' not in kwargs:
+            kwargs['prefix'] = self.__class__.__name__.lower() + '_'
         super(YOLOv3Neck, self).__init__(**kwargs)
         with self.name_scope():
-            self.yolo_blocks = nn.HybridSequential()
-            self.transitions = nn.HybridSequential()
+            self.yolo_blocks = nn.HybridSequential(prefix='blocks_')
+            self.transitions = nn.HybridSequential(prefix='trans_')
 
             for i, channel in enumerate(out_channels[::-1]):
                 block = YOLODetectionBlockV3(channel, norm_cfg, act_cfg)
@@ -64,10 +66,12 @@ class YOLOv3Neck(nn.HybridBlock):
 
     def hybrid_forward(self, F, features):
         outs = []
-        last = features[-1]
-        for i, feat in enumerate(features[::-1]):
+        features = features[::-1]
+        last = features[0]
+        for i, feat in enumerate(features):
             if i > 0:
-                feat = F.concat(F.slice_like(last, feat * 0, axes=(2, 3)), feat, dim=1)
+                feat = F.concat(last, feat, dim=1)
+                # feat = F.concat(F.slice_like(last, feat, axes=(2, 3)), feat, dim=1)
 
             feat, tip = self.yolo_blocks[i](feat)
             outs.append(tip)

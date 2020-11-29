@@ -121,6 +121,8 @@ class YOLOv3Head(nn.HybridBlock):
                  strides: List[int],
                  num_classes=20,
                  **kwargs):
+        if 'prefix' not in kwargs:
+            kwargs['prefix'] = self.__class__.__name__.lower() + '_'
         super(YOLOv3Head, self).__init__(**kwargs)
         with self.name_scope():
             self.heads = nn.HybridSequential()
@@ -131,4 +133,4 @@ class YOLOv3Head(nn.HybridBlock):
     def hybrid_forward(self, F, feats):
         outputs = [head(feat) for feat, head in zip(feats, self.heads)]
         outputs = [F.concat(*bundle, dim=1) for bundle in zip(*outputs)]
-        return outputs
+        return tuple(outputs)

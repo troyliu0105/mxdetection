@@ -33,6 +33,8 @@ class YOLOv3(ABCDetector):
                  strides: List[int],
                  anchors: List[List[List[int]]],
                  **kwargs):
+        if 'prefix' not in kwargs:
+            kwargs['prefix'] = self.__class__.__name__.lower() + '_'
         super().__init__(**kwargs)
         self.backbone = build_backbone(backbone_cfg)
         self.neck = build_neck(neck_cfg)
@@ -63,7 +65,7 @@ class YOLOv3(ABCDetector):
         ids = result.slice_axis(axis=-1, begin=0, end=1)
         scores = result.slice_axis(axis=-1, begin=1, end=2)
         bboxes = result.slice_axis(axis=-1, begin=2, end=None)
-        return ids, scores, bboxes
+        return tuple([ids, scores, bboxes])
 
     def extract_training_targets(self,
                                  img: nd.NDArray,
