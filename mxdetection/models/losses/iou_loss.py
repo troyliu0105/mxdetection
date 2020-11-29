@@ -1,5 +1,6 @@
 import mxnet as mx
 import mxnet.autograd
+from gluoncv.nn.bbox import BBoxCenterToCorner
 from mxnet.gluon import loss as gloss
 
 from ..builder import LOSSES
@@ -14,6 +15,7 @@ class IoULoss(gloss.Loss):
         assert loss_type in ('giou', 'diou', 'ciou')
         self.loss_type = loss_type
         self.x1y1x2y2 = x1y1x2y2
+        self._center2corner = BBoxCenterToCorner(axis=-1, split=True)
 
     # noinspection PyMethodOverriding,PyPep8Naming,PyIncorrectDocstring,PyProtectedMember
     def hybrid_forward(self, F, pred, label, sample_weight=None):
@@ -24,6 +26,7 @@ class IoULoss(gloss.Loss):
         :param sample_weight:
         :return:
         """
+        label = F.stop_gradient(label)
         label = gloss._reshape_like(F, label, pred)
         # pred = pred.reshape(-1, 4).T
         # label = label.reshape(-1, 4).T
@@ -33,41 +36,42 @@ class IoULoss(gloss.Loss):
             b1_xmin, b1_ymin, b1_xmax, b1_ymax = F.split(pred, axis=-1, num_outputs=4)
             b2_xmin, b2_ymin, b2_xmax, b2_ymax = F.split(label, axis=-1, num_outputs=4)
         else:
-            b1_x, b1_y, b1_w, b1_h = F.split(pred, axis=-1, num_outputs=4)
-            b2_x, b2_y, b2_w, b2_h = F.split(label, axis=-1, num_outputs=4)
-
-            b1_xmin, b1_xmax = b1_x - b1_w / 2., b1_x + b1_w / 2.
-            b1_ymin, b1_ymax = b1_y - b1_h / 2., b1_y + b1_h / 2.
-            b2_xmin, b2_xmax = b2_x - b2_w / 2., b2_x + b2_w / 2.
-            b2_ymin, b2_ymax = b2_y - b2_h / 2., b2_y + b2_h / 2.
+            b1_xmin, b1_ymin, b1_xmax, b1_ymax = self._center2corner(pred)
+            b2_xmin, b2_ymin, b2_xmax, b2_ymax = self._center2corner(label)
 
         # Intersection area
         MAX = 1e5
-        inter_w = F.clip(F.minimum(b1_xmax, b2_xmax) - F.maximum(b1_xmin, b2_xmin), 0, MAX)
-        inter_h = F.clip(F.minimum(b1_ymax, b2_ymax) - F.maximum(b1_ymin, b2_ymin), 0, MAX)
+        inter_w = F.clip(
+            F.elemwise_sub(F.minimum(b1_xmax, b2_xmax), F.maximum(b1_xmin, b2_xmin)),
+            0, MAX)
+        inter_h = F.clip(
+            F.elemwise_sub(F.minimum(b1_ymax, b2_ymax), F.maximum(b1_ymin, b2_ymin)),
+            0, MAX)
         # inter_w = F.where(inter_w < 0., F.zeros_like(inter_w), inter_w)
         # inter_h = F.where(inter_h < 0., F.zeros_like(inter_h), inter_h)
-        inter = inter_w * inter_h
+        inter = F.elemwise_mul(inter_w, inter_h)
 
         # Union Area
-        w1, h1 = b1_xmax - b1_xmin, b1_ymax - b1_ymin
-        w2, h2 = b2_xmax - b2_xmin, b2_ymax - b2_ymin
+        w1, h1 = F.elemwise_sub(b1_xmax, b1_xmin), F.elemwise_sub(b1_ymax, b1_ymin)
+        w2, h2 = F.elemwise_sub(b2_xmax, b2_xmin), F.elemwise_sub(b2_ymax, b2_ymin)
         # w1 = F.where(w1 < 0., F.zeros_like(w1), w1)
         # h1 = F.where(h1 < 0., F.zeros_like(h1), h1)
         # w2 = F.where(w2 < 0., F.zeros_like(w2), w2)
         # h2 = F.where(h2 < 0., F.zeros_like(h2), h2)
-        union = (w1 * h1 + 1e-16) + w2 * h2 - inter
+        union = F.elemwise_mul(w1, h1) + F.elemwise_mul(w2, h2)
 
-        iou = inter / union  # iou
+        iou = F.elemwise_div(inter, union + 1e-16)  # iou
 
         # From: https://github.com/ultralytics/yolov3
         # GIOU
-        cw = F.maximum(b1_xmax, b2_xmax) - F.minimum(b1_xmin, b2_xmin)  # convex (smallest enclosing box) width
-        ch = F.maximum(b1_ymax, b2_ymax) - F.minimum(b1_ymin, b2_ymin)  # convex height
+        cw = F.elemwise_sub(F.maximum(b1_xmax, b2_xmax),
+                            F.minimum(b1_xmin, b2_xmin))  # convex (smallest enclosing box) width
+        ch = F.elemwise_sub(F.maximum(b1_ymax, b2_ymax),
+                            F.minimum(b1_ymin, b2_ymin))  # convex height
         # cw = F.where(cw < 0., F.zeros_like(cw), cw)
         # ch = F.where(ch < 0., F.zeros_like(ch), ch)
         if self.loss_type == 'giou':
-            c_area = cw * ch + 1e-16  # convex area
+            c_area = F.elemwise_mul(cw, ch) + 1e-16  # convex area
             giou = iou - (c_area - union) / c_area  # GIoU
             loss = 1. - giou
         else:
@@ -84,6 +88,7 @@ class IoULoss(gloss.Loss):
                 # TODO without pause(), coverage will be faster
                 with mx.autograd.pause():
                     alpha = v / (1. - iou + v + 1e-16)
+                    alpha = F.stop_gradient(alpha)
                 ciou = iou - (rho2 / c2 + v * alpha)
                 loss = 1. - ciou
             else:
