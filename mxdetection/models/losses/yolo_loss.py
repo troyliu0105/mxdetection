@@ -171,5 +171,5 @@ class YOLOv3Loss(gloss.Loss):
         denorm_class = F.cast(F.shape_array(class_t).slice_axis(axis=0, begin=1, end=None).prod(), 'float32')
         class_mask = F.broadcast_mul(class_mask, objness_t)
         cls_loss = F.broadcast_mul(self._sigmoid_ce(cls_preds, class_t, class_mask), denorm_class)
-        loss = F.concat(*[l.sum() for l in [coord_loss, obj_loss, cls_loss]], dim=0)
+        loss = F.concat(*[l.nansum() for l in [coord_loss, obj_loss, cls_loss]], dim=0)
         return loss
