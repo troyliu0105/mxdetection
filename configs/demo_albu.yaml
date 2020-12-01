@@ -5,7 +5,9 @@ trainer:
   workers: 6
   hybridize: true
   log_interval: 100
-  val_interval: 1
+  val_interval: 5
+  save_interval: 5
+  max_save: 10
   accumulate: 1
   train_metrics:
     - type: Loss
@@ -34,7 +36,8 @@ detector:
   backbone_cfg:
     backend: gluoncv
     name: mobilenetv3_large
-    pretrained: true
+    #    pretrained: true
+    pretrained: configs/0.2378-imagenet-mobilenetv3_large-0-best.params
     ctx: *ctx
     features:
       - _resunit6_hardswish0__mul0
@@ -76,35 +79,38 @@ optimizer:
       step_factor: 0.1
       step_epoch: [ 110, 130 ]
       power: 2
+  backbone_lr_mult: 0.1
+  backbone_wd_mult: 1.0
+  no_wd: true
 dataset:
   train:
     type: VOCDetectionRecordFile
     filename: data/trainval.rec
   train_transform:
-    #    - type: ToNumpy
-    #    - type: Albumentations
-    #      transforms:
-    #        - type: HorizontalFlip
-    #          p: 0.5
-    #        - type: ColorJitter
-    #          brightness: 0.15
-    #          contrast: 0.5
-    #          saturation: 0.5
-    #          hue: 0.2
-    #          p: 0.5
-    #          always_apply: true
-    #        - type: Resize
-    #          height: 416
-    #          width: 416
-    #      bbox_params:
-    #        format: pascal_voc
-    #    - type: ToTensor
-    #    - type: Normalize
-    - type: YOLOv3DefaultTransform
-      height: 416
-      width: 416
-      mean: [ 0.485, 0.456, 0.406 ]
-      std: [ 0.229, 0.224, 0.225 ]
+    - type: ToNumpy
+    - type: Albumentations
+      transforms:
+        - type: HorizontalFlip
+          p: 0.5
+        - type: ColorJitter
+          brightness: 0.15
+          contrast: 0.5
+          saturation: 0.5
+          hue: 0.2
+          p: 0.5
+          always_apply: true
+        - type: Resize
+          height: 416
+          width: 416
+      bbox_params:
+        format: pascal_voc
+    - type: ToTensor
+    - type: Normalize
+    #    - type: YOLOv3DefaultTransform
+    #      height: 416
+    #      width: 416
+    #      mean: [0.485, 0.456, 0.406]
+    #      std: [0.229, 0.224, 0.225]
     - type: YOLOv3TargetGenerator
       num_class: 20
       strides: *strides

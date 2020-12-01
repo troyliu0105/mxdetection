@@ -81,11 +81,6 @@ class YOLOOutputV3(nn.HybridBlock):
         objness = pred.slice_axis(axis=-1, begin=4, end=5)
         class_pred = pred.slice_axis(axis=-1, begin=5, end=None)
 
-        # help to convert coordinate to [0, 1]
-        # grids = F.cast(F.shape_array(x).slice_axis(axis=0, begin=2, end=None).flip(axis=0), dtype='float32')
-        # grids = grids.reshape((1, 1, 1, 2))
-        # origin_size = grids * self._stride
-
         # valid offsets, (1, 1, height, width, 2)
         offsets = F.slice_like(offsets, x * 0, axes=(2, 3))
         # reshape to (1, height*width, 1, 2)
@@ -95,10 +90,7 @@ class YOLOOutputV3(nn.HybridBlock):
         # anchors *= anchor_scale
 
         box_centers = F.broadcast_add(F.sigmoid(raw_box_centers), offsets) * self._stride
-        # box_centers = F.broadcast_div(F.broadcast_add(F.sigmoid(raw_box_centers), offsets), grids)
-        # box_scales = F.broadcast_mul(F.exp(raw_box_scales), anchors)
-        box_scales = F.broadcast_mul(F.exp(F.clip(raw_box_scales, -5, 5)), anchors)
-        # box_scales = F.broadcast_div(F.broadcast_mul(F.exp(raw_box_scales), anchors), origin_size)
+        box_scales = F.broadcast_mul(F.exp(raw_box_scales), anchors)
         confidence = F.sigmoid(objness)
         class_score = F.broadcast_mul(F.sigmoid(class_pred), confidence)
         wh = box_scales / 2.0
@@ -106,13 +98,13 @@ class YOLOOutputV3(nn.HybridBlock):
 
         if autograd.is_training():
             # during training, we don't need to convert whole bunch of info to detection results
-            return bbox.reshape((0, -1, 4)), \
-                   pred.slice_axis(axis=-1, begin=0, end=4).reshape((0, -1, 4)), \
-                   pred.slice_axis(axis=-1, begin=4, end=None).reshape((0, -1, self._classes + 1))
+            return (bbox.reshape((0, -1, 4)),
+                    raw_box_centers.reshape((0, -3, -1)),
+                    raw_box_scales.reshape((0, -3, -1)),
+                    objness.reshape((0, -3, -1)),
+                    class_pred.reshape((0, -3, -1)))
 
         # prediction per class
-        # origin_size = F.tile(origin_size, reps=2)
-        # bbox = F.broadcast_mul(bbox, origin_size)
         bboxes = F.tile(bbox, reps=(self._classes, 1, 1, 1, 1))
         scores = F.transpose(class_score, axes=(3, 0, 1, 2)).expand_dims(axis=-1)
         ids = F.broadcast_add(scores * 0, F.arange(0, self._classes).reshape((0, 1, 1, 1, 1)))
@@ -129,6 +121,8 @@ class YOLOv3Head(nn.HybridBlock):
                  strides: List[int],
                  num_classes=20,
                  **kwargs):
+        if 'prefix' not in kwargs:
+            kwargs['prefix'] = self.__class__.__name__.lower() + '_'
         super(YOLOv3Head, self).__init__(**kwargs)
         with self.name_scope():
             self.heads = nn.HybridSequential()
@@ -139,4 +133,4 @@ class YOLOv3Head(nn.HybridBlock):
     def hybrid_forward(self, F, feats):
         outputs = [head(feat) for feat, head in zip(feats, self.heads)]
         outputs = [F.concat(*bundle, dim=1) for bundle in zip(*outputs)]
-        return outputs
+        return tuple(outputs)

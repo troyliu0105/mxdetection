@@ -8,6 +8,10 @@ from .transformers.abc import AbstractTransformer
 DATASETS = Registry('dataset')
 TRANSFORMERS = Registry('transformers')
 
+VOC_CLASSNAME = ('aeroplane', 'bicycle', 'bird', 'boat', 'bottle', 'bus', 'car',
+                 'cat', 'chair', 'cow', 'diningtable', 'dog', 'horse', 'motorbike',
+                 'person', 'pottedplant', 'sheep', 'sofa', 'train', 'tvmonitor')
+
 
 def build_dataset(cfg):
     if 'metric' in cfg:
@@ -18,9 +22,9 @@ def build_dataset(cfg):
 
     if metric:
         if metric == 'voc07':
-            metric = VOC07MApMetric(iou_thresh=0.5)
+            metric = VOC07MApMetric(iou_thresh=0.5, class_names=VOC_CLASSNAME)
         elif metric == 'voc':
-            metric = VOCMApMetric(iou_thresh=0.5)
+            metric = VOCMApMetric(iou_thresh=0.5, class_names=VOC_CLASSNAME)
         elif metric == 'coco':
             metric = COCODetectionMetric(dataset, '.')
         else:
@@ -35,9 +39,10 @@ class Compose(AbstractTransformer):
         self.transformers = transformers
 
     def do(self, img, target):
+        args = (img, target)
         for trans in self.transformers:
-            img, target = trans(img, target)
-        return img, target
+            args = trans(*args)
+        return args
 
 
 def build_transformers(cfg: List[Dict]):

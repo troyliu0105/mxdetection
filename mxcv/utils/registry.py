@@ -2,9 +2,8 @@
 Source: mmcv
 """
 import inspect
-import warnings
 from functools import partial
-from typing import Union, Callable
+from typing import Union, Callable, Any
 
 from mxnet import gluon
 
@@ -129,7 +128,7 @@ class Registry:
         return _register
 
 
-def build_from_cfg(cfg, registry, default_args=None) -> Union[gluon.HybridBlock, Callable]:
+def build_from_cfg(cfg, registry, default_args=None) -> Union[gluon.HybridBlock, Callable, Any]:
     """Build a module from config dict.
 
     Args:

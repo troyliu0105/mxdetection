@@ -1,7 +1,8 @@
 from gluoncv.utils import split_and_load
 from mxnet import autograd
-from mxnet.gluon.contrib.estimator import BatchProcessor as BaseBatchProcessor
-from mxnet.gluon.contrib.estimator.event_handler import EpochBegin
+
+from mxcv.estimator import BatchProcessor as BaseBatchProcessor
+from mxcv.estimator.event_handler import EpochBegin
 
 __all__ = ['BatchIterProcessor']
 
@@ -80,20 +81,25 @@ class BatchIterProcessor(BaseBatchProcessor, EpochBegin):
         loss: List of NDArray
             Loss on each of the sharded inputs.
         """
-        data = split_and_load(train_batch[0], ctx_list=estimator.context, batch_axis=0, even_split=False)
-        label = split_and_load(train_batch[1], ctx_list=estimator.context, batch_axis=0, even_split=False)
-        targets = list(zip(*[split_and_load(t, ctx_list=estimator.context, batch_axis=0, even_split=False)
-                             for t in estimator.net.extract_training_targets(*train_batch)]))
-        # data, targets, gt_bboxes = self._get_data_and_label(train_batch, estimator.context)
+        # data = split_and_load(train_batch[0], ctx_list=estimator.context, batch_axis=0, even_split=False)
+        # label = split_and_load(train_batch[1], ctx_list=estimator.context, batch_axis=0, even_split=False)
+        # targets = list(zip(*[split_and_load(t, ctx_list=estimator.context, batch_axis=0, even_split=False)
+        #                      for t in estimator.net.extract_training_targets(*train_batch)]))
+        data, fixed_targets, gt_bboxes = self._get_data_and_label(train_batch, estimator.context)
+
+        # fixed_targets = [split_and_load(train_batch[it], ctx_list=estimator.context, batch_axis=0)
+        #                  for it in range(1, 7)]
+        # gt_boxes = split_and_load(train_batch[7], ctx_list=estimator.context, batch_axis=0)
 
         with autograd.record():
+            # bbox, raw_box_centers, raw_box_scales, objness, class_pred
             preds = [estimator.net(x) for x in data]
-            loss = [estimator.loss(*pred, *target, gt_bbox[..., :4]) for pred, target, gt_bbox in
-                    zip(preds, targets, label)]
+            loss = [estimator.loss(*pred, *target, gt_bbox) for pred, target, gt_bbox in
+                    zip(preds, fixed_targets, gt_bboxes)]
 
         autograd.backward(loss)
 
-        return data, targets, preds, loss
+        return data, fixed_targets, preds, loss
 
     def _get_data_and_label(self, batch, ctx, batch_axis=0):
         data = batch[0]

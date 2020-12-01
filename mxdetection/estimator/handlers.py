@@ -1,12 +1,11 @@
 import logging
 import os
 
-import coloredlogs
 import mxnet as mx
 import mxnet.autograd
-from mxnet.gluon.contrib.estimator.event_handler import CheckpointHandler
-from mxnet.gluon.contrib.estimator.event_handler import GradientUpdateHandler
-from mxnet.gluon.contrib.estimator.event_handler import TrainEnd, EpochEnd, BatchEnd
+from mxcv.estimator.event_handler import CheckpointHandler
+from mxcv.estimator.event_handler import GradientUpdateHandler
+from mxcv.estimator.event_handler import TrainEnd, EpochEnd, BatchEnd, EpochBegin
 
 __all__ = ['GradientAccumulateUpdateHandler',
            'ExportBestSymbolModelHandler',
@@ -15,20 +14,19 @@ __all__ = ['GradientAccumulateUpdateHandler',
            'MixupDatasetTerminatorHandler']
 
 
-class GradientAccumulateUpdateHandler(GradientUpdateHandler):
+class GradientAccumulateUpdateHandler(GradientUpdateHandler, EpochBegin):
     def __init__(self, accumulate=1, priority=-2000):
         super(GradientAccumulateUpdateHandler, self).__init__(priority=priority)
         self._accumulate = accumulate
         self._trained_batch_num = 0
 
     def batch_end(self, estimator, *args, **kwargs):
-        loss = kwargs['loss']
         batch_size = 0
-        if not isinstance(loss, list):
-            loss = [loss]
-        if isinstance(loss, list):
-            for l in loss:
-                batch_size += l.shape[0]
+        batch = kwargs['batch']
+        if not isinstance(batch, (list, tuple)):
+            batch = [batch]
+        for b in batch:
+            batch_size += b.shape[0]
 
         if self._accumulate == 1:
             estimator.trainer.step(batch_size)
@@ -38,16 +36,15 @@ class GradientAccumulateUpdateHandler(GradientUpdateHandler):
 
         self._trained_batch_num += 1
 
+    def epoch_begin(self, estimator, *args, **kwargs):
+        self._trained_batch_num = 0
+
 
 class ExportBestSymbolModelHandler(TrainEnd):
     def __init__(self, checkpointer: CheckpointHandler, ipt_shape=(1, 3, 416, 416)):
         self._checkpointer = checkpointer
         self._ipt_shape = ipt_shape
         self.priority = 9999
-        self._logger = logging.getLogger('Metric')
-        coloredlogs.install(logger=self._logger,
-                            level='DEBUG',
-                            fmt='%(asctime)s %(name)s[%(process)d] %(levelname)s %(message)s')
 
     def train_end(self, estimator, *args, **kwargs):
         best_param_filename = self._checkpointer.model_prefix + '-best'
@@ -60,7 +57,7 @@ class ExportBestSymbolModelHandler(TrainEnd):
                 _ = estimator.net(ipt)
             symbol_prefix = os.path.splitext(best_param_filename)[0]
             estimator.net.export(os.path.splitext(symbol_prefix)[0])
-            self._logger.debug(f'exporting symbol model to `{symbol_prefix}`')
+            logging.debug(f'exporting symbol model to `{symbol_prefix}`')
 
 
 class EmptyContextCacheHandler(EpochEnd):

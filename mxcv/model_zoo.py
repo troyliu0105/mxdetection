@@ -1,3 +1,6 @@
+import logging
+import os
+
 import mxnet as mx
 from gluoncv.model_zoo import get_model as glcv_get_model, get_model_list
 from gluoncv.nn.feature import FeatureExtractor
@@ -8,11 +11,14 @@ def build_backbone(cfg):
     return build_backbone_via_backend(**cfg)
 
 
-def build_backbone_via_backend(backend='gluoncv2', name='resnet18', pretrained=True,
+def build_backbone_via_backend(backend='gluoncv2',
+                               name='resnet18',
+                               pretrained=True,
                                features=("stage2_resunit1_relu0_fwd",
                                          "stage3_resunit1_relu0_fwd",
                                          "stage4_resunit1_relu0_fwd"),
-                               ctx=mx.cpu(0)):
+                               ctx=mx.cpu(0),
+                               **kwargs):
     if backend == 'gluoncv2':
         getter = glcv2_get_model
     elif backend == 'gluoncv':
@@ -21,7 +27,14 @@ def build_backbone_via_backend(backend='gluoncv2', name='resnet18', pretrained=T
         raise ValueError(f'Unknown backend: {backend}, supported: gluoncv, gluoncv2')
 
     assert name in gcv2_model_list or name in get_model_list(), f'{name} not in model list'
-    net = getter(name, pretrained=pretrained, ctx=ctx)
-    ipt = mx.sym.var('data', dtype='float32')
+    if isinstance(pretrained, str):
+        # read pretrained weight from path
+        assert os.path.isfile(pretrained)
+        net = getter(name, pretrained=False, ctx=ctx, **kwargs)
+        logging.info(f'load pretrained weight from {pretrained}')
+        net.load_parameters(pretrained, ctx=ctx, allow_missing=True, ignore_extra=True)
+    else:
+        net = getter(name, pretrained=pretrained, ctx=ctx, **kwargs)
+    ipt = [mx.sym.var('data', dtype='float32')]
     net = FeatureExtractor(net, features, ipt)
     return net
