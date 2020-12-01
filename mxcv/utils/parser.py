@@ -1,3 +1,4 @@
+import logging
 from typing import Union, AnyStr
 
 import mxnet as mx
@@ -31,7 +32,12 @@ def replace_lambda(lambda_str: str):
 
 def replace_ctx_string(ctx_raw: Union[int, AnyStr]):
     if isinstance(ctx_raw, int):
-        ctx = [mx.gpu(ctx_raw)]
+        assert ctx_raw >= 0, f'gpu index should be greater-equal than 0, current: {ctx_raw}'
+        if mx.context.num_gpus() > 0:
+            ctx = [mx.gpu(ctx_raw)]
+        else:
+            logging.warning(f'GPU is disabled, fallback to CPU')
+            ctx = [mx.cpu()]
     elif isinstance(ctx_raw, str):
         if ',' in ctx_raw:
             ctx = [mx.gpu(int(s.strip())) for s in ctx_raw.split(',')]
