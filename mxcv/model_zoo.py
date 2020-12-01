@@ -1,3 +1,4 @@
+import logging
 import os
 
 import mxnet as mx
@@ -16,7 +17,8 @@ def build_backbone_via_backend(backend='gluoncv2',
                                features=("stage2_resunit1_relu0_fwd",
                                          "stage3_resunit1_relu0_fwd",
                                          "stage4_resunit1_relu0_fwd"),
-                               ctx=mx.cpu(0)):
+                               ctx=mx.cpu(0),
+                               **kwargs):
     if backend == 'gluoncv2':
         getter = glcv2_get_model
     elif backend == 'gluoncv':
@@ -28,10 +30,11 @@ def build_backbone_via_backend(backend='gluoncv2',
     if isinstance(pretrained, str):
         # read pretrained weight from path
         assert os.path.isfile(pretrained)
-        net = getter(name, pretrained=False, ctx=ctx)
+        net = getter(name, pretrained=False, ctx=ctx, **kwargs)
+        logging.info(f'load pretrained weight from {pretrained}')
         net.load_parameters(pretrained, ctx=ctx, allow_missing=True, ignore_extra=True)
     else:
-        net = getter(name, pretrained=pretrained, ctx=ctx)
+        net = getter(name, pretrained=pretrained, ctx=ctx, **kwargs)
     ipt = [mx.sym.var('data', dtype='float32')]
     net = FeatureExtractor(net, features, ipt)
     return net
