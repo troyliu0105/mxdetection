@@ -36,15 +36,16 @@ class YOLOv3(ABCDetector):
         if 'prefix' not in kwargs:
             kwargs['prefix'] = self.__class__.__name__.lower() + '_'
         super().__init__(**kwargs)
-        self.backbone = build_backbone(backbone_cfg)
-        self.neck = build_neck(neck_cfg)
-        self.head = build_head(head_cfg)
-        self._num_classes = num_class
-        self._strides = strides
-        self._anchors = anchors
-        self._item_len = 4 + 1 + num_class
-        self.bbox2center = BBoxCornerToCenter(axis=-1, split=True)
-        self.bbox2corner = BBoxCenterToCorner(axis=-1, split=False)
+        with self.name_scope():
+            self.backbone = build_backbone(backbone_cfg)
+            self.neck = build_neck(neck_cfg)
+            self.head = build_head(head_cfg)
+            self._num_classes = num_class
+            self._strides = strides
+            self._anchors = anchors
+            self._item_len = 4 + 1 + num_class
+            self.bbox2center = BBoxCornerToCenter(axis=-1, split=True)
+            self.bbox2corner = BBoxCenterToCorner(axis=-1, split=False)
 
     def hybrid_forward(self, F, x: Union[mx.nd.NDArray, mx.sym.Symbol], *args, **kwargs):
         x = self.backbone(x)
