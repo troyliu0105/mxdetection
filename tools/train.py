@@ -34,8 +34,7 @@ def train(opts):
     loss_fn = build_loss(cfg.pop('loss'))
     optimizer = estimator.build_optimizer(cfg.pop('optimizer'), net)
 
-    if opts.vizfile != '':
-        save_net_plot(net, opts.vizfile)
+    save_net_plot(net, opts.vizfile)
 
     data_cfg = cfg.pop('dataset')
     # batchify = Tuple([Stack(), Pad(axis=0, pad_val=-1)])
