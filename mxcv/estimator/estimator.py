@@ -19,7 +19,6 @@
 # pylint: disable=wildcard-import, unused-variable
 """Gluon Estimator"""
 
-import copy
 import logging
 import sys
 import warnings
@@ -252,16 +251,17 @@ class Estimator(object):
             metric.name = 'training ' + metric.name
 
     def _add_validation_metrics(self):
-        if not self._val_metrics:
-            self._val_metrics = [copy.deepcopy(metric) for metric in self._train_metrics]
+        pass
+        # if not self._val_metrics:
+        #     self._val_metrics = [copy.deepcopy(metric) for metric in self._train_metrics]
 
-        for metric in self._val_metrics:
-            # add validation prefix to the metric name
-            # it is useful for event handlers to distinguish them from training metrics
-            if 'training' in metric.name:
-                metric.name = metric.name.replace('training', 'validation')
-            else:
-                metric.name = 'validation ' + metric.name
+        # for metric in self._val_metrics:
+        #     # add validation prefix to the metric name
+        #     # it is useful for event handlers to distinguish them from training metrics
+        #     if 'training' in metric.name:
+        #         metric.name = metric.name.replace('training', 'validation')
+        #     else:
+        #         metric.name = 'validation ' + metric.name
 
     @property
     def train_metrics(self):

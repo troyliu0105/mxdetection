@@ -1,6 +1,6 @@
 import logging
 
-import coloredlogs
+import wandb
 from mxnet import nd
 from mxnet.metric import EvalMetric, Loss, register
 from terminaltables import AsciiTable
@@ -20,10 +20,6 @@ class DetectionAPMetric(EvalMetric):
         self._metric = gluon_metric
         super(DetectionAPMetric, self).__init__(name=self._metric.name, output_names=output_names,
                                                 label_names=label_names, **kwargs)
-        self._logger = logging.getLogger('Metric')
-        coloredlogs.install(logger=self._logger,
-                            level='DEBUG',
-                            fmt='%(asctime)s %(name)s[%(process)d] %(levelname)s %(message)s')
         # preveting to print multiple times
         self._log_flag = True
 
@@ -36,7 +32,9 @@ class DetectionAPMetric(EvalMetric):
         table = AsciiTable(table)
         table.justify_columns[1] = 'right'
         if self._log_flag:
-            self._logger.info('\n' + table.table)
+            logging.info('\n' + table.table)
+            if wandb.run:
+                wandb.log({'mAP': clz_ap[-1]})
             self._log_flag = False
         return clz_name[-1], clz_ap[-1]
 

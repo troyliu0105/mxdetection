@@ -5,6 +5,7 @@ import sys
 
 sys.path.append(os.curdir)
 import yaml
+import wandb
 from gluoncv.data.batchify import Tuple, Stack, Pad
 from gluoncv import utils as gcv_utils
 from mxnet.gluon.data import DataLoader
@@ -23,6 +24,8 @@ def train(opts):
     logging.debug(f'Initializing from {opts.cfg}')
     with open(opts.cfg) as fp:
         cfg = yaml.load(fp, yaml.SafeLoader)
+        if opts.wandb:
+            wandb.config.update(cfg)
         cfg = postprocess(cfg)
         logging.debug(yaml.dump(cfg, default_flow_style=False))
     trainer_cfg = cfg.pop('trainer')
@@ -71,8 +74,8 @@ def train(opts):
                         batch_processor=processor)
 
     # initializing handlers
-    checkpointer = CheckpointHandler('save',
-                                     model_prefix='save',
+    checkpointer = CheckpointHandler(opts.save_dir,
+                                     model_prefix=opts.name,
                                      monitor=test_metrics[0],
                                      verbose=1,
                                      save_best=True,
@@ -110,10 +113,20 @@ if __name__ == '__main__':
     parser.add_argument('--seed', type=int, default=3344511, help="random seed")
     parser.add_argument('--logfile', type=str, default='', help="dump logging file")
     parser.add_argument('--vizfile', type=str, default='', help="render the network structure as pdf")
+    parser.add_argument('--wandb', action='store_true', help="render the network structure as pdf")
+    parser.add_argument('--name', type=str, default='experiment', help="render the network structure as pdf")
     parser.add_argument('-v', '--verbose', action='store_true', help='verbose logging')
     opts = parser.parse_args()
     gcv_utils.check_version("0.7.0")
     gcv_utils.random.seed(opts.seed)
+    if opts.wandb:
+        wandb.init(project='mxdetection',
+                   name=opts.name)
+        opts.save_dir = wandb.run.dir
+    else:
+        opts.save_dir = os.path.join('save', opts.name)
+        if not os.path.exists(opts.save_dir):
+            os.makedirs(opts.save_dir)
     if opts.logfile != '':
         setup_logger(opts.logfile, 'DEBUG' if opts.verbose else 'INFO')
     train(opts)

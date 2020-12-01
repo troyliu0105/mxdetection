@@ -1,7 +1,6 @@
 import logging
 import os
 
-import coloredlogs
 import mxnet as mx
 import mxnet.autograd
 from mxcv.estimator.event_handler import CheckpointHandler
@@ -20,28 +19,25 @@ class GradientAccumulateUpdateHandler(GradientUpdateHandler, EpochBegin):
         super(GradientAccumulateUpdateHandler, self).__init__(priority=priority)
         self._accumulate = accumulate
         self._trained_batch_num = 0
-        self._accumulate_batch_size = 0
 
     def batch_end(self, estimator, *args, **kwargs):
+        batch_size = 0
         batch = kwargs['batch']
         if not isinstance(batch, (list, tuple)):
             batch = [batch]
         for b in batch:
-            self._accumulate_batch_size += b.shape[0]
+            batch_size += b.shape[0]
 
         if self._accumulate == 1:
-            estimator.trainer.step(self._accumulate_batch_size)
-            self._accumulate_batch_size = 0
+            estimator.trainer.step(batch_size)
         elif (self._trained_batch_num + 1) % self._accumulate == 0:
-            estimator.trainer.step(self._accumulate_batch_size * self._accumulate)
+            estimator.trainer.step(batch_size * self._accumulate)
             estimator.net.collect_params().zero_grad()
-            self._accumulate_batch_size = 0
 
         self._trained_batch_num += 1
 
     def epoch_begin(self, estimator, *args, **kwargs):
         self._trained_batch_num = 0
-        self._accumulate_batch_size = 0
 
 
 class ExportBestSymbolModelHandler(TrainEnd):
@@ -49,10 +45,6 @@ class ExportBestSymbolModelHandler(TrainEnd):
         self._checkpointer = checkpointer
         self._ipt_shape = ipt_shape
         self.priority = 9999
-        self._logger = logging.getLogger('Metric')
-        coloredlogs.install(logger=self._logger,
-                            level='DEBUG',
-                            fmt='%(asctime)s %(name)s[%(process)d] %(levelname)s %(message)s')
 
     def train_end(self, estimator, *args, **kwargs):
         best_param_filename = self._checkpointer.model_prefix + '-best'
@@ -65,7 +57,7 @@ class ExportBestSymbolModelHandler(TrainEnd):
                 _ = estimator.net(ipt)
             symbol_prefix = os.path.splitext(best_param_filename)[0]
             estimator.net.export(os.path.splitext(symbol_prefix)[0])
-            self._logger.debug(f'exporting symbol model to `{symbol_prefix}`')
+            logging.debug(f'exporting symbol model to `{symbol_prefix}`')
 
 
 class EmptyContextCacheHandler(EpochEnd):

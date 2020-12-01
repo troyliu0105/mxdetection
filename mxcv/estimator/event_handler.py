@@ -23,6 +23,7 @@ import os
 import time
 import warnings
 
+import wandb
 import numpy as np
 from mxnet.metric import CompositeEvalMetric, EvalMetric
 from mxnet.metric import Loss as metric_loss
@@ -258,6 +259,7 @@ class LoggingHandler(TrainBegin, TrainEnd, EpochBegin, EpochEnd, BatchBegin, Bat
         self.priority = priority
         self.log_interval = log_interval
         self.log_interval_time = 0
+        self.global_step = 0
 
     def train_begin(self, estimator, *args, **kwargs):
         self.train_start = time.time()
@@ -300,10 +302,14 @@ class LoggingHandler(TrainBegin, TrainEnd, EpochBegin, EpochEnd, BatchBegin, Bat
             if self.batch_index % self.log_interval == 0:
                 msg += 'time/interval: %.3fs ' % self.log_interval_time
                 self.log_interval_time = 0
+                wandb_metric = {}
                 for metric in self.metrics:
                     # only log current training loss & metric after each interval
                     name, value = metric.get()
+                    wandb_metric[name] = float(value)
                     msg += '%s: %.4f, ' % (name, value)
+                wandb.log(wandb_metric, step=self.global_step)
+                self.global_step += 1
                 estimator.logger.info(msg.rstrip(', '))
         self.batch_index += 1
 
