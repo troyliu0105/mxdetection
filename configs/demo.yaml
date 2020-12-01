@@ -71,28 +71,40 @@ optimizer:
       iters_per_epoch: &iters_epoch 1035
     - mode: step
       base_lr: *lr
+      nepochs: 147
       iters_per_epoch: *iters_epoch
       step_factor: 0.1
-      step_epoch: [ 120, 135 ]
+      step_epoch: [ 110, 130 ]
+      power: 2
 dataset:
   train:
     type: VOCDetectionRecordFile
     filename: data/trainval.rec
   train_transform:
-    - type: ToNumpy
-    - type: Albumentations
-      transforms:
-        - type: HorizontalFlip
-          p: 0.5
-        - type: RandomBrightnessContrast
-          p: 0.3
-        - type: Resize
-          height: 416
-          width: 416
-      bbox_params:
-        format: pascal_voc
-    - type: ToTensor
-    - type: Normalize
+    #    - type: ToNumpy
+    #    - type: Albumentations
+    #      transforms:
+    #        - type: HorizontalFlip
+    #          p: 0.5
+    #        - type: ColorJitter
+    #          brightness: 0.15
+    #          contrast: 0.5
+    #          saturation: 0.5
+    #          hue: 0.2
+    #          p: 0.5
+    #          always_apply: true
+    #        - type: Resize
+    #          height: 416
+    #          width: 416
+    #      bbox_params:
+    #        format: pascal_voc
+    #    - type: ToTensor
+    #    - type: Normalize
+    - type: YOLOv3DefaultTransform
+      height: 416
+      width: 416
+      mean: [ 0.485, 0.456, 0.406 ]
+      std: [ 0.229, 0.224, 0.225 ]
     - type: YOLOv3TargetGenerator
       num_class: 20
       strides: *strides
