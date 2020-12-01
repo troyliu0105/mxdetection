@@ -1,8 +1,9 @@
 gluoncv~=0.8.0
-Cython~=0.29.21
 gluoncv2~=0.0.59
+Cython~=0.29.21
 PyYAML~=5.3.1
 albumentations~=0.5.1
 coloredlogs~=14.0
 terminaltables~=3.1.0
-absl-py>=0.11.0
+tqdm>=4.53.0
+wandb
