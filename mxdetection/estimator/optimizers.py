@@ -6,18 +6,16 @@ __all__ = ['build_optimizer']
 
 
 def build_optimizer(cfg: dict, net: gluon.HybridBlock):
-    if 'type' not in cfg:
-        cfg.setdefault('type', 'sgd')
-    if 'optimizer_params' not in cfg:
-        cfg.setdefault('optimizer_params', {})
-    if 'lr_scheduler' not in cfg:
-        cfg.setdefault('lr_scheduler', None)
-
-    lrs = build_lr_scheduler(cfg.pop('lr_scheduler'))
+    lrs = build_lr_scheduler(cfg.pop('lr_scheduler', None))
     cfg['optimizer_params']['lr_scheduler'] = lrs
 
-    opt = cfg.pop('type')
-    optimizer_params = cfg.pop('optimizer_params')
+    net.backbone.collect_params().setattr('lr_mult', cfg.pop('backbone_lr_mult', 1.0))
+    net.backbone.collect_params().setattr('wd_mult', cfg.pop('backbone_wd_mult', 1.0))
+    if cfg.pop('no_wd', False):
+        net.collect_params('.*beta|.*gamma|.*bias').setattr('wd_mult', 0.0)
+
+    opt = cfg.pop('type', 'sgd')
+    optimizer_params = cfg.pop('optimizer_params', {})
     trainer = gluon.Trainer(net.collect_params(), opt,
                             optimizer_params=optimizer_params, **cfg)
     return trainer

@@ -1,0 +1,132 @@
+trainer:
+  ctx: &ctx 0
+  epochs: 150
+  batch_size: 16
+  workers: 6
+  hybridize: true
+  log_interval: 100
+  val_interval: 5
+  save_interval: 5
+  max_save: 10
+  accumulate: 1
+  train_metrics:
+    - type: Loss
+      name: loss
+    - type: CustomLoss
+      λtransform_fn: "lambda loss: [l[0] for l in loss]"
+      name: box
+    - type: CustomLoss
+      λtransform_fn: "lambda loss: [l[1] for l in loss]"
+      name: conf
+    - type: CustomLoss
+      λtransform_fn: "lambda loss: [l[2] for l in loss]"
+      name: clz
+    - type: IoUMetric
+      name: iou
+    - type: IoURecall
+      iou_thres: 0.75
+      name: recall75
+detector:
+  type: YOLOv3
+  anchors: &anchors [ [ 33, 48, 50, 108, 127, 96 ],
+                      [ 78, 202, 178, 179, 130, 295 ],
+                      [ 332, 195, 228, 326, 366, 359 ] ]
+  strides: &strides [ 8, 16, 32 ]
+  num_class: &num_class 20
+  backbone_cfg:
+    backend: gluoncv
+    name: mobilenetv3_large
+    pretrained: true
+    #    pretrained: configs/0.2378-imagenet-mobilenetv3_large-0-best.params
+    ctx: *ctx
+    features:
+      - _resunit6_hardswish0__mul0
+      - _resunit12_hardswish0__mul0
+      - hardswish1__mul0
+  neck_cfg:
+    type: YOLOv3Neck
+    out_channels: [ 128, 256, 512 ]
+    norm_cfg:
+      type: BN
+    act_cfg:
+      type: LeakyReLU
+      alpha: 0.1
+  head_cfg:
+    type: YOLOv3Head
+    anchors: *anchors
+    strides: [ 8, 16, 32 ]
+    num_classes: 20
+loss:
+  type: YOLOv3Loss
+#  class_num: *num_class
+#  label_smooth: false
+optimizer:
+  type: adam
+  optimizer_params:
+    learning_rate: &lr 0.001
+    wd: 0.0001
+  lr_scheduler:
+    - mode: linear
+      base_lr: 0
+      target_lr: *lr
+      nepochs: 3
+      # 16551 / batch_size
+      iters_per_epoch: &iters_epoch 1035
+    - mode: step
+      base_lr: *lr
+      nepochs: 147
+      iters_per_epoch: *iters_epoch
+      step_factor: 0.1
+      step_epoch: [ 110, 130 ]
+      power: 2
+  backbone_lr_mult: 0.1
+  backbone_wd_mult: 1.0
+  no_wd: true
+dataset:
+  train:
+    type: VOCDetectionRecordFile
+    filename: data/trainval.rec
+  train_transform:
+    - type: ToNumpy
+    - type: Albumentations
+      transforms:
+        - type: HorizontalFlip
+          p: 0.5
+        - type: ColorJitter
+          brightness: 0.15
+          contrast: 0.5
+          saturation: 0.5
+          hue: 0.2
+          p: 0.5
+          always_apply: true
+        - type: Resize
+          height: 416
+          width: 416
+      bbox_params:
+        format: pascal_voc
+    - type: ToTensor
+    - type: Normalize
+    #    - type: YOLOv3DefaultTransform
+    #      height: 416
+    #      width: 416
+    #      mean: [0.485, 0.456, 0.406]
+    #      std: [0.229, 0.224, 0.225]
+    - type: YOLOv3TargetGenerator
+      num_class: 20
+      strides: *strides
+      anchors: *anchors
+  test:
+    type: VOCDetectionRecordFile
+    filename: data/test.rec
+    metric: voc07
+  test_transform:
+    - type: ToNumpy
+    - type: Albumentations
+      transforms:
+        - type: Resize
+          height: 416
+          width: 416
+      bbox_params:
+        format: pascal_voc
+    - type: ToTensor
+    - type: Normalize
