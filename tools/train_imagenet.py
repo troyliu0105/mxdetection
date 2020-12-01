@@ -8,8 +8,9 @@ import gluoncv as gcv
 import mxnet as mx
 import numpy as np
 import tqdm
+import wandb
+from gluoncv.data import ImageNet
 from gluoncv.data import RandomTransformDataLoader
-from gluoncv.data import imagenet
 from gluoncv.model_zoo import get_model as glcv_get_model
 from gluoncv.utils import makedirs, LRSequential, LRScheduler
 from gluoncv2.model_provider import get_model as glcv2_get_model
@@ -18,6 +19,14 @@ from mxnet import gluon, nd
 from mxnet.contrib import amp
 from mxnet.gluon.data.vision import ImageRecordDataset
 from mxnet.gluon.data.vision import transforms
+
+
+class Transform(object):
+    def __init__(self, compose):
+        self.compose = compose
+
+    def __call__(self, img, target):
+        return self.compose(img), target
 
 
 # CLI
@@ -116,7 +125,15 @@ def parse_args():
     parser.add_argument('--accumulate', type=int, default=1,
                         help='weight accumulate')
     parser.add_argument('--amp', action='store_true')
+    parser.add_argument('--wandb', action='store_true')
+    parser.add_argument('--name', default='', type=str)
     opt = parser.parse_args()
+    if opt.name == '':
+        opt.name = opt.model
+    if opt.wandb:
+        wandb.init(project='imagenet',
+                   name=opt.name,
+                   config=opt)
     gcv.utils.check_version('0.6.0')
     coloredlogs.install(level='DEBUG')
     return opt
@@ -141,6 +158,7 @@ def main():
     batch_size = opt.batch_size
     classes = 1000
     num_training_samples = 1281167
+    num_validating_samples = 50000
 
     num_gpus = opt.num_gpus
     batch_size *= max(1, num_gpus)
@@ -230,8 +248,8 @@ def main():
         return train_dataset, val_dataset
 
     def get_data_loader(data_dir):
-        train_dataset = imagenet.classification.ImageNet(data_dir, train=True)
-        val_dataset = imagenet.classification.ImageNet(data_dir, train=False)
+        train_dataset = ImageNet(data_dir, train=True)
+        val_dataset = ImageNet(data_dir, train=False)
         return train_dataset, val_dataset
 
     def batch_fn(batch, ctx):
@@ -240,7 +258,7 @@ def main():
         return data, label
 
     if opt.use_rec:
-        train_dataset, val_dataset = get_data_rec(opt.rec_train, opt.rec_train_idx)
+        train_dataset, val_dataset = get_data_rec(opt.rec_train, opt.rec_val)
     else:
         train_dataset, val_dataset = get_data_loader(opt.data_dir)
 
@@ -264,16 +282,19 @@ def main():
             last_batch='rollover', num_workers=num_workers)
     else:
         train_data = RandomTransformDataLoader([
-            transforms.Compose([
-                # transforms.RandomResizedCrop(opt.input_size),
-                transforms.RandomResizedCrop(x * 32),
-                transforms.RandomFlipLeftRight(),
-                transforms.RandomColorJitter(brightness=jitter_param, contrast=jitter_param,
-                                             saturation=jitter_param),
-                transforms.RandomLighting(lighting_param),
-                transforms.ToTensor(),
-                normalize
-            ]) for x in range(10, 20)],
+            Transform(
+                transforms.Compose([
+                    # transforms.RandomResizedCrop(opt.input_size),
+                    transforms.RandomResizedCrop(x * 32),
+                    transforms.RandomFlipLeftRight(),
+                    transforms.RandomColorJitter(brightness=jitter_param, contrast=jitter_param,
+                                                 saturation=jitter_param),
+                    transforms.RandomLighting(lighting_param),
+                    transforms.ToTensor(),
+                    normalize
+                ])
+            )
+            for x in range(10, 20)],
             train_dataset, interval=10 * opt.accumulate,
             batch_size=batch_size, shuffle=False, pin_memory=True,
             last_batch='rollover', num_workers=num_workers)
@@ -299,8 +320,11 @@ def main():
 
     save_frequency = opt.save_frequency
     if opt.save_dir and save_frequency:
-        save_dir = opt.save_dir
-        makedirs(save_dir)
+        if opt.wandb:
+            save_dir = wandb.run.dir
+        else:
+            save_dir = opt.save_dir
+            makedirs(save_dir)
     else:
         save_dir = ''
         save_frequency = 0
@@ -325,11 +349,11 @@ def main():
         return smoothed
 
     def test(ctx, val_data):
-        if opt.use_rec:
-            val_data.reset()
         acc_top1.reset()
         acc_top5.reset()
-        for i, batch in tqdm.tqdm(enumerate(val_data), desc='Validating'):
+        for i, batch in tqdm.tqdm(enumerate(val_data),
+                                  desc='Validating',
+                                  total=num_validating_samples // batch_size):
             data, label = batch_fn(batch, ctx)
             # outputs = [net(X.astype(opt.dtype, copy=False)) for X in data]
             outputs = [net(X) for X in data]
@@ -378,8 +402,8 @@ def main():
 
         best_val_score = 1
 
-        # err_top1_val, err_top5_val = test(ctx, val_data)
-        # logger.info('initial validation: err-top1=%f err-top5=%f' % (err_top1_val, err_top5_val))
+        err_top1_val, err_top5_val = test(ctx, val_data)
+        logger.info('initial validation: err-top1=%f err-top5=%f' % (err_top1_val, err_top5_val))
 
         for epoch in range(opt.resume_epoch, opt.num_epochs):
             tic = time.time()
@@ -454,13 +478,23 @@ def main():
                 _, loss_score = train_loss_metric.get()
                 train_metric_name, train_metric_score = train_metric.get()
                 samplers_per_sec = batch_size / (time.time() - btic)
-                pbar.set_postfix_str(f'{samplers_per_sec:.1f} imgs/sec, '
-                                     f'loss: {loss_score:.4f}, '
-                                     f'acc: {train_metric_score * 100:.2f}, '
-                                     f'lr: {trainer.learning_rate:.4e}')
+                postfix = f'{samplers_per_sec:.1f} imgs/sec, ' \
+                          f'loss: {loss_score:.4f}, ' \
+                          f'acc: {train_metric_score * 100:.2f}, ' \
+                          f'lr: {trainer.learning_rate:.4e}'
+                if opt.multi_scale:
+                    postfix += f', size: {data[0].shape[-1]}'
+                pbar.set_postfix_str(postfix)
                 pbar.update()
                 btic = time.time()
                 if opt.log_interval and not (i + 1) % opt.log_interval:
+                    step = epoch * num_batches + i
+                    wandb.log({
+                        'samplers_per_sec': samplers_per_sec,
+                        train_metric_name: train_metric_score,
+                        'lr': trainer.learning_rate,
+                        'loss': loss_score
+                    }, step=step)
                     logger.info('Epoch[%d] Batch [%d]\tSpeed: %f samples/sec\t%s=%f\tlr=%f' % (
                         epoch, i, samplers_per_sec,
                         train_metric_name, train_metric_score, trainer.learning_rate))
@@ -470,6 +504,10 @@ def main():
             throughput = int(batch_size * i / (time.time() - tic))
 
             err_top1_val, err_top5_val = test(ctx, val_data)
+            wandb.log({
+                'err1': err_top1_val,
+                'err5': err_top5_val
+            }, step=epoch * num_batches)
 
             logger.info('[Epoch %d] training: %s=%f' % (epoch, train_metric_name, train_metric_score))
             logger.info('[Epoch %d] speed: %d samples/sec\ttime cost: %f' % (epoch, throughput, time.time() - tic))
@@ -491,9 +529,9 @@ def main():
             trainer.save_states('%s/imagenet-%s-%d.states' % (save_dir, model_name, opt.num_epochs - 1))
 
     if opt.mode == 'hybrid':
-        net.hybridize(static_alloc=True, static_shape=True)
+        net.hybridize(static_alloc=True, static_shape=not opt.multi_scale)
         if distillation:
-            teacher.hybridize(static_alloc=True, static_shape=True)
+            teacher.hybridize(static_alloc=True, static_shape=not opt.multi_scale)
     train(context)
 
 
