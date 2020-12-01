@@ -44,9 +44,18 @@ class TanH(gluon.nn.HybridBlock):
         return s.format(name=self.__class__.__name__)
 
 
+class Mish(gluon.nn.HybridBlock):
+    def __init__(self, **kwargs):
+        super(Mish, self).__init__(**kwargs)
+
+    def hybrid_forward(self, F, x, *args, **kwargs):
+        return F.elemwise_mul(x, F.tanh(F.Activation(x, act_type='softrelu')))
+
+
 for module in [
     ReLU, gluon.nn.LeakyReLU, gluon.nn.PReLU, gluon.nn.ELU,
-    Sigmoid, gluoncv.nn.HardSigmoid, TanH, gluon.nn.Swish, gluoncv.nn.HardSwish
+    Sigmoid, gluoncv.nn.HardSigmoid, TanH, gluon.nn.Swish, gluoncv.nn.HardSwish,
+    Mish
 ]:
     ACTIVATION_LAYERS.register_module(module=module)
 

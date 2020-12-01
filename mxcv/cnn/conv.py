@@ -14,7 +14,7 @@ class ConvBundle(gluon.nn.HybridBlock):
                  dilation=1,
                  groups=1,
                  norm_cfg=None,
-                 act_cfg=dict(type='ReLU'),
+                 act_cfg=None,
                  order=('conv', 'norm', 'act'), **kwargs):
         super(ConvBundle, self).__init__(**kwargs)
         use_bias = False if (bias == 'auto' and norm_cfg is None) or bias else True
