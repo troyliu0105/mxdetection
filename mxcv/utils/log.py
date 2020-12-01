@@ -5,7 +5,9 @@ import coloredlogs
 __all__ = ['setup_logger']
 
 
-def setup_logger(filename, level='INFO'):
+def setup_logger(filename, level='INFO', fmt=None):
     fh = logging.FileHandler(filename, mode='a+')
     logging.root.addHandler(fh)
-    coloredlogs.install(level=level)
+    if not fmt:
+        fmt = '%(asctime)s %(name)s[%(process)d] %(levelname)s %(message)s'
+    coloredlogs.install(level=level, fmt=fmt)
