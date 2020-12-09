@@ -1,14 +1,14 @@
 trainer:
-  ctx: &ctx cpu
+  ctx: &ctx 0
   epochs: 150
-  batch_size: 16
+  batch_size: 8
   workers: 6
   hybridize: false
   log_interval: 100
-  val_interval: 5
+  val_interval: 1
   save_interval: 5
   max_save: 10
-  accumulate: 1
+  accumulate: 2
   train_metrics:
     - type: Loss
       name: loss
@@ -28,9 +28,12 @@ trainer:
       name: recall75
 detector:
   type: YOLOv3
-  anchors: &anchors [ [ 33, 48, 50, 108, 127, 96 ],
-                      [ 78, 202, 178, 179, 130, 295 ],
-                      [ 332, 195, 228, 326, 366, 359 ] ]
+  #  anchors: &anchors [ [ 33, 48, 50, 108, 127, 96 ],
+  #                      [ 78, 202, 178, 179, 130, 295 ],
+  #                      [ 332, 195, 228, 326, 366, 359 ] ]
+  anchors: &anchors [ [ 25.81529033,  38.3634057 , 44.55140972,  93.6911521 , 113.57834053,  86.69660521 ],
+                      [ 71.87384844, 188.29211426 , 168.47284698, 165.02140808,  121.92860794, 285.65744972 ],
+                      [ 324.87639427, 189.16629314, 218.2322731 , 318.60364532, 363.08363152, 355.22986984 ] ]
   strides: &strides [ 8, 16, 32 ]
   num_class: &num_class 20
   backbone_cfg:
@@ -72,7 +75,8 @@ optimizer:
       target_lr: *lr
       nepochs: 3
       # 16551 / batch_size
-      iters_per_epoch: &iters_epoch 1035
+      #      iters_per_epoch: &iters_epoch 1035
+      iters_per_epoch: &iters_epoch 2068
     - mode: step
       base_lr: *lr
       nepochs: 147

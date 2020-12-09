@@ -144,9 +144,11 @@ class BiFPNUnit(nn.HybridBlock):
                     self.top_down_conv.add(block)
             for i in range(len(levels) - 1, 0, -1):
                 with self.top_down_upsampler.name_scope():
-                    up = _upsample_conv(channels * 2 ** (i - 1), name=f'upto.{channels * 2 ** (i - 1)}_') \
-                        if expand_channels else nn.HybridLambda(
-                        lambda F, x: F.UpSampling(x, scale=2, sample_type='nearest'), prefix='upsample')
+                    if expand_channels:
+                        up = _upsample_conv(channels * 2 ** (i - 1), name=f'upto.{channels * 2 ** (i - 1)}_')
+                    else:
+                        up = nn.HybridLambda(lambda F, x: F.UpSampling(x, scale=2, sample_type='nearest'),
+                                             prefix='upsample')
                     self.top_down_upsampler.add(up)
 
             self.bottom_up_conv = nn.HybridSequential(prefix='bottom.up_')
