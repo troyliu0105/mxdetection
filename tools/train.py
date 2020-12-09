@@ -9,6 +9,7 @@ import wandb
 from gluoncv.data.batchify import Tuple, Stack, Pad
 from gluoncv import utils as gcv_utils
 from mxnet.gluon.data import DataLoader
+import mxnet as mx
 
 from mxcv.estimator import Estimator, CheckpointHandler, ValidationHandler, LoggingHandler
 from mxcv.utils.parser import postprocess
@@ -29,12 +30,17 @@ def train(opts):
         cfg = postprocess(cfg)
         logging.debug(yaml.dump(cfg, default_flow_style=False))
     trainer_cfg = cfg.pop('trainer')
+    if trainer_cfg.get('amp', False):
+        from mxnet.contrib import amp
+        amp.init()
+
     net = build_detector(cfg.pop('detector'))
-    net.initialize(ctx=trainer_cfg['ctx'])
+    # net.initialize(ctx=trainer_cfg['ctx'])
+    net.initialize(ctx=trainer_cfg['ctx'], init=mx.init.Xavier(magnitude=2.5))
     loss_fn = build_loss(cfg.pop('loss'))
     optimizer = estimator.build_optimizer(cfg.pop('optimizer'), net)
 
-    save_net_plot(net, opts.vizfile)
+    save_net_plot(net, opts.vizfile, format='png')
 
     data_cfg = cfg.pop('dataset')
     # batchify = Tuple([Stack(), Pad(axis=0, pad_val=-1)])
@@ -87,6 +93,7 @@ def train(opts):
     train_handlers = [
         checkpointer,
         exporter,
+        processor,
         estimator.EmptyContextCacheHandler(),
         # estimator.StoppingOnNanHandler(),
         ValidationHandler(val_dataloader,
@@ -96,8 +103,10 @@ def train(opts):
         LoggingHandler(log_interval=trainer_cfg['log_interval'],
                        metrics=train_metrics),
         estimator.GradientAccumulateUpdateHandler(trainer_cfg['accumulate']),
-        processor
     ]
+
+    # logging.warning(f'Initial validating...')
+    # trainer.evaluate(val_dataloader)
     trainer.fit(train_dataloader,
                 val_dataloader,
                 event_handlers=train_handlers,
@@ -126,6 +135,5 @@ if __name__ == '__main__':
         opts.save_dir = os.path.join('save', opts.name)
         if not os.path.exists(opts.save_dir):
             os.makedirs(opts.save_dir)
-    if opts.logfile != '':
-        setup_logger(opts.logfile, 'DEBUG' if opts.verbose else 'INFO')
+    setup_logger(opts.logfile, 'DEBUG' if opts.verbose else 'INFO')
     train(opts)

@@ -1,3 +1,4 @@
+import mxnet as mx
 from gluoncv.utils import split_and_load
 from mxnet import autograd
 
@@ -5,6 +6,8 @@ from mxcv.estimator import BatchProcessor as BaseBatchProcessor
 from mxcv.estimator.event_handler import EpochBegin
 
 __all__ = ['BatchIterProcessor']
+
+CPU = mx.cpu()
 
 
 class BatchIterProcessor(BaseBatchProcessor, EpochBegin):
@@ -39,14 +42,14 @@ class BatchIterProcessor(BaseBatchProcessor, EpochBegin):
             # get prediction results
             with autograd.predict_mode():
                 ids, scores, bboxes = estimator.val_net(x)
-            det_ids.append(ids)
-            det_scores.append(scores)
+            det_ids.append(ids.as_in_context(CPU))
+            det_scores.append(scores.as_in_context(CPU))
             # clip to image size
-            det_bboxes.append(bboxes.clip(0, val_batch[0].shape[2]))
+            det_bboxes.append(bboxes.clip(0, val_batch[0].shape[2]).as_in_context(CPU))
             # split ground truths
-            gt_ids.append(y.slice_axis(axis=-1, begin=4, end=5))
-            gt_bboxes.append(y.slice_axis(axis=-1, begin=0, end=4))
-            gt_difficults.append(y.slice_axis(axis=-1, begin=5, end=6) if y.shape[-1] > 5 else None)
+            gt_ids.append(y.slice_axis(axis=-1, begin=4, end=5).as_in_context(CPU))
+            gt_bboxes.append(y.slice_axis(axis=-1, begin=0, end=4).as_in_context(CPU))
+            gt_difficults.append(y.slice_axis(axis=-1, begin=5, end=6).as_in_context(CPU) if y.shape[-1] > 5 else None)
         # pred = [estimator.val_net(x) for x in data]
         # loss = [estimator.val_loss(y_hat, y) for y_hat, y in zip(pred, label)]
         pred = (det_bboxes, det_ids, det_scores)

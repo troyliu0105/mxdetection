@@ -259,7 +259,7 @@ class LoggingHandler(TrainBegin, TrainEnd, EpochBegin, EpochEnd, BatchBegin, Bat
         self.priority = priority
         self.log_interval = log_interval
         self.log_interval_time = 0
-        self.global_step = 0
+        self.global_step = 1
 
     def train_begin(self, estimator, *args, **kwargs):
         self.train_start = time.time()

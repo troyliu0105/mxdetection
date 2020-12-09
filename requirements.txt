@@ -1,4 +1,4 @@
-gluoncv~=0.8.0
+gluoncv>=0.8.0
 gluoncv2~=0.0.59
 Cython~=0.29.21
 PyYAML~=5.3.1
