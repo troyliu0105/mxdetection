@@ -5,6 +5,7 @@ import tempfile
 
 import mxnet as mx
 import wandb
+from PIL import Image
 from mxnet import autograd, gluon
 from terminaltables import AsciiTable
 
@@ -21,6 +22,8 @@ def save_net_plot(net, filename=None, shape=(1, 3, 416, 416), format='pdf'):
                             shape={'data': shape},
                             node_attrs={'shape': 'rect', 'fixedsize': 'false'},
                             save_format=format)
+    # https://stackoverflow.com/questions/51152059/pillow-in-python-wont-let-me-open-image-exceeds-limit
+    Image.MAX_IMAGE_PIXELS = None
     path = a.view(tempfile.mktemp())
     if filename and os.path.isfile(filename):
         try:
