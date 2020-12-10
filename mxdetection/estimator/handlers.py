@@ -55,7 +55,7 @@ class ExportBestSymbolModelHandler(TrainEnd):
             ipt = mx.nd.random_normal(shape=self._ipt_shape, ctx=estimator.context[0])
             with mx.autograd.predict_mode():
                 _ = estimator.net(ipt)
-            symbol_prefix = os.path.splitext(best_param_filename)[0]
+            symbol_prefix = os.path.splitext(best_param_file)[0]
             estimator.net.export(os.path.splitext(symbol_prefix)[0])
             logging.debug(f'exporting symbol model to `{symbol_prefix}`')
 
