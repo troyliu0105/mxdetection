@@ -63,4 +63,4 @@ def print_summary(net: gluon.HybridBlock, ipt_shape=(1, 3, 416, 416)):
     ctx = net.collect_params().list_ctx()[0]
     ipt = mx.random.uniform(shape=ipt_shape, ctx=ctx)
     net.summary(ipt)
-    logging.info(compute_net_params(net))
+    logging.info("\n" + compute_net_params(net))
