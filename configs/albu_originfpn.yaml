@@ -40,7 +40,7 @@ detector:
     backend: gluoncv
     name: mobilenetv3_large
     #    pretrained: true
-    pretrained: configs/0.2378-imagenet-mobilenetv3_large-0-best.params
+    pretrained: assets/0.2378-imagenet-mobilenetv3_large-0-best.params
     ctx: *ctx
     features:
       - _resunit6_hardswish0__mul0
