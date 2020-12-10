@@ -14,7 +14,7 @@ import mxnet as mx
 from mxcv.estimator import Estimator, CheckpointHandler, ValidationHandler, LoggingHandler
 from mxcv.utils.parser import postprocess
 from mxcv.utils.log import setup_logger
-from mxcv.utils.viz import save_net_plot
+from mxcv.utils.viz import save_net_plot, print_summary
 from mxdetection import estimator
 from mxdetection.datasets import build_dataset, build_transformers
 from mxdetection.models import build_loss, build_detector
@@ -41,6 +41,7 @@ def train(opts):
     optimizer = estimator.build_optimizer(cfg.pop('optimizer'), net)
 
     save_net_plot(net, opts.vizfile, format='png')
+    print_summary(net)
 
     data_cfg = cfg.pop('dataset')
     # batchify = Tuple([Stack(), Pad(axis=0, pad_val=-1)])
