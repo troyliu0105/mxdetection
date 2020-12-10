@@ -3,10 +3,10 @@ trainer:
   epochs: 150
   batch_size: 8
   workers: 6
-  hybridize: false
+  hybridize: true
   log_interval: 100
   val_interval: 1
-  save_interval: 5
+  save_interval: 1
   max_save: 10
   accumulate: 2
   train_metrics:
@@ -76,7 +76,7 @@ optimizer:
       nepochs: 3
       # 16551 / batch_size
       #      iters_per_epoch: &iters_epoch 1035
-      iters_per_epoch: &iters_epoch 2068
+      iters_per_epoch: &iters_epoch 1035
     - mode: step
       base_lr: *lr
       nepochs: 147
@@ -85,8 +85,8 @@ optimizer:
       step_epoch: [ 110, 130 ]
       power: 2
   backbone_lr_mult: 0.1
-  backbone_wd_mult: 1.0
-  no_wd: true
+  backbone_wd_mult: 0.1
+  no_wd: false
 dataset:
   train:
     type: VOCDetectionRecordFile
