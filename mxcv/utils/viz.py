@@ -56,11 +56,17 @@ def compute_net_params(net):
         ['non_trainable', mean_var]
     ])
     table.justify_columns[1] = 'right'
-    return table.table
+    return table
 
 
 def print_summary(net: gluon.HybridBlock, ipt_shape=(1, 3, 416, 416)):
     ctx = net.collect_params().list_ctx()[0]
     ipt = mx.random.uniform(shape=ipt_shape, ctx=ctx)
     net.summary(ipt)
-    logging.info("\n" + compute_net_params(net))
+    table = compute_net_params(net)
+    logging.info("\n" + table.table)
+    if wandb.run:
+        headers = table.table_data[0]
+        data = table.table_data[1:]
+        wandb_table = wandb.Table(columns=headers, data=data)
+        wandb.log({"Parameters Statistics": wandb_table})
