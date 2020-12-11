@@ -9,6 +9,7 @@ import wandb
 from gluoncv.data.batchify import Tuple, Stack, Pad
 from gluoncv import utils as gcv_utils
 from mxnet.gluon.data import DataLoader
+from mxnet.contrib import amp
 import mxnet as mx
 
 from mxcv.estimator import Estimator, CheckpointHandler, ValidationHandler, LoggingHandler
@@ -31,7 +32,6 @@ def train(opts):
         logging.debug(yaml.dump(cfg, default_flow_style=False))
     trainer_cfg = cfg.pop('trainer')
     if trainer_cfg.get('amp', False):
-        from mxnet.contrib import amp
         amp.init()
 
     net = build_detector(cfg.pop('detector'))
@@ -57,6 +57,7 @@ def train(opts):
                                   batchify_fn=batchify,
                                   num_workers=trainer_cfg['workers'], pin_memory=True,
                                   timeout=60 * 60,
+                                  prefetch=trainer_cfg['batch_size'] * 3,
                                   thread_pool=False)
     val_dataloader = DataLoader(val_dataset, trainer_cfg['batch_size'],
                                 shuffle=False, last_batch='keep',

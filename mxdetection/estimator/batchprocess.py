@@ -1,6 +1,7 @@
 import mxnet as mx
 from gluoncv.utils import split_and_load
 from mxnet import autograd
+from mxnet.contrib.amp import amp
 
 from mxcv.estimator import BatchProcessor as BaseBatchProcessor
 from mxcv.estimator.event_handler import EpochBegin
@@ -100,7 +101,11 @@ class BatchIterProcessor(BaseBatchProcessor, EpochBegin):
             loss = [estimator.loss(*pred, *target, gt_bbox) for pred, target, gt_bbox in
                     zip(preds, fixed_targets, gt_bboxes)]
 
-        autograd.backward(loss)
+            if amp._amp_initialized:
+                with amp.scale_loss(loss, estimator.trainer) as scaled_loss:
+                    autograd.backward(scaled_loss)
+            else:
+                autograd.backward(loss)
 
         return data, fixed_targets, preds, loss
 

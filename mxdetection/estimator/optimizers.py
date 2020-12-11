@@ -1,4 +1,5 @@
 from mxnet import gluon
+from mxnet.contrib.amp import amp
 
 from .lr_schedulers import build_lr_scheduler
 
@@ -16,6 +17,10 @@ def build_optimizer(cfg: dict, net: gluon.HybridBlock):
 
     opt = cfg.pop('type', 'sgd')
     optimizer_params = cfg.pop('optimizer_params', {})
+    if amp._amp_initialized:
+        cfg['update_on_kvstore'] = False
     trainer = gluon.Trainer(net.collect_params(), opt,
                             optimizer_params=optimizer_params, **cfg)
+    if amp._amp_initialized:
+        amp.init_trainer(trainer)
     return trainer
