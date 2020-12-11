@@ -21,12 +21,11 @@ class GradientAccumulateUpdateHandler(GradientUpdateHandler, EpochBegin):
         self._trained_batch_num = 0
 
     def batch_end(self, estimator, *args, **kwargs):
-        batch_size = 0
+        # batch_size = 0
         batch = kwargs['batch']
         if not isinstance(batch, (list, tuple)):
             batch = [batch]
-        for b in batch:
-            batch_size += b.shape[0]
+        batch_size = batch[0].shape[0]
 
         if self._accumulate == 1:
             estimator.trainer.step(batch_size)
