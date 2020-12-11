@@ -1,4 +1,5 @@
 trainer:
+  amp: false
   ctx: &ctx 0
   epochs: 150
   batch_size: 8
@@ -86,8 +87,8 @@ optimizer:
       step_epoch: [ 110, 130 ]
       power: 2
   backbone_lr_mult: 0.1
-  backbone_wd_mult: 1.0
-  no_wd: true
+  backbone_wd_mult: 0.1
+  no_wd: false
 dataset:
   train:
     type: VOCDetectionRecordFile
