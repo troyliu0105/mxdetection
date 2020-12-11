@@ -259,7 +259,6 @@ class LoggingHandler(TrainBegin, TrainEnd, EpochBegin, EpochEnd, BatchBegin, Bat
         self.priority = priority
         self.log_interval = log_interval
         self.log_interval_time = 0
-        self.global_step = 1
 
     def train_begin(self, estimator, *args, **kwargs):
         self.train_start = time.time()
@@ -302,14 +301,10 @@ class LoggingHandler(TrainBegin, TrainEnd, EpochBegin, EpochEnd, BatchBegin, Bat
             if self.batch_index % self.log_interval == 0:
                 msg += 'time/interval: %.3fs ' % self.log_interval_time
                 self.log_interval_time = 0
-                wandb_metric = {}
                 for metric in self.metrics:
                     # only log current training loss & metric after each interval
                     name, value = metric.get()
-                    wandb_metric[name] = float(value)
                     msg += '%s: %.4f, ' % (name, value)
-                wandb.log(wandb_metric, step=self.global_step)
-                self.global_step += 1
                 estimator.logger.info(msg.rstrip(', '))
         self.batch_index += 1
 
@@ -331,10 +326,14 @@ class LoggingHandler(TrainBegin, TrainEnd, EpochBegin, EpochEnd, BatchBegin, Bat
         if isinstance(self.log_interval, int) or self.log_interval == 'epoch':
             epoch_time = time.time() - self.epoch_start
             msg = '[Epoch %d] Finished in %.3fs, ' % (self.current_epoch, epoch_time)
+            wandb_metric = {}
             for monitor in self.metrics:
                 name, value = monitor.get()
                 msg += '%s: %.4f, ' % (name, value)
+                wandb_metric[name] = float(value)
             estimator.logger.info(msg.rstrip(', '))
+            if wandb.run:
+                wandb.log(wandb_metric, step=self.current_epoch)
         self.current_epoch += 1
         self.batch_index = 0
 
