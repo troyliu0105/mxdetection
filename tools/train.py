@@ -103,6 +103,7 @@ def train(opts):
                           epoch_period=trainer_cfg['val_interval'],
                           event_handlers=processor),
         LoggingHandler(log_interval=trainer_cfg['log_interval'],
+                       log_to_wandb=True,
                        metrics=train_metrics),
         estimator.GradientAccumulateUpdateHandler(trainer_cfg['accumulate']),
     ]

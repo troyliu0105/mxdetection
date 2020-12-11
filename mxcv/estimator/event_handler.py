@@ -246,6 +246,7 @@ class LoggingHandler(TrainBegin, TrainEnd, EpochBegin, EpochEnd, BatchBegin, Bat
 
     def __init__(self, log_interval='epoch',
                  metrics=None,
+                 log_to_wandb=False,
                  priority=np.Inf):
         super(LoggingHandler, self).__init__()
         if not isinstance(log_interval, int) and log_interval != 'epoch':
@@ -259,6 +260,7 @@ class LoggingHandler(TrainBegin, TrainEnd, EpochBegin, EpochEnd, BatchBegin, Bat
         self.priority = priority
         self.log_interval = log_interval
         self.log_interval_time = 0
+        self.log_to_wandb = log_to_wandb
 
     def train_begin(self, estimator, *args, **kwargs):
         self.train_start = time.time()
@@ -326,18 +328,16 @@ class LoggingHandler(TrainBegin, TrainEnd, EpochBegin, EpochEnd, BatchBegin, Bat
         if isinstance(self.log_interval, int) or self.log_interval == 'epoch':
             epoch_time = time.time() - self.epoch_start
             msg = '[Epoch %d] Finished in %.3fs, ' % (self.current_epoch, epoch_time)
-            for monitor in self.metrics:
-                name, value = monitor.get()
-                msg += '%s: %.4f, ' % (name, value)
-            estimator.logger.info(msg.rstrip(', '))
-        self.current_epoch += 1
-        self.batch_index = 0
-        if wandb.run:
             wandb_metric = {}
             for monitor in self.metrics:
                 name, value = monitor.get()
+                msg += '%s: %.4f, ' % (name, value)
                 wandb_metric[name] = float(value)
-            wandb.log(wandb_metric, step=self.current_epoch, commit=True)
+            if wandb.run and self.log_to_wandb:
+                wandb.log(wandb_metric, step=self.current_epoch, commit=True)
+            estimator.logger.info(msg.rstrip(', '))
+        self.current_epoch += 1
+        self.batch_index = 0
 
 
 class CheckpointHandler(TrainBegin, BatchEnd, EpochEnd):
