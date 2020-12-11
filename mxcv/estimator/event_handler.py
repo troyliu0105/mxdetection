@@ -333,7 +333,7 @@ class LoggingHandler(TrainBegin, TrainEnd, EpochBegin, EpochEnd, BatchBegin, Bat
                 wandb_metric[name] = float(value)
             estimator.logger.info(msg.rstrip(', '))
             if wandb.run:
-                wandb.log(wandb_metric, step=self.current_epoch)
+                wandb.log(wandb_metric, step=self.current_epoch, commit=True)
         self.current_epoch += 1
         self.batch_index = 0
 
