@@ -3,6 +3,8 @@ from typing import Union, AnyStr
 
 import mxnet as mx
 
+_CTX = None
+
 
 def postprocess(cfg):
     cfg = postprocess_iter(cfg)
@@ -10,10 +12,15 @@ def postprocess(cfg):
 
 
 def postprocess_iter(cfg):
+    global _CTX
     if isinstance(cfg, dict):
         for k in list(cfg):
             if k == 'ctx':
-                cfg['ctx'] = replace_ctx_string(cfg['ctx'])
+                if _CTX:
+                    cfg['ctx'] = _CTX
+                else:
+                    cfg['ctx'] = replace_ctx_string(cfg['ctx'])
+                    _CTX = cfg['ctx']
             elif k.startswith('λ'):
                 lambda_str = cfg.pop(k)
                 k = k.replace('λ', '')

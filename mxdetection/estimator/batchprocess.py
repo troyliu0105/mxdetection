@@ -120,9 +120,9 @@ class BatchIterProcessor(BaseBatchProcessor, EpochBegin):
 
     def epoch_begin(self, estimator, *args, **kwargs):
         if self._enable_hybridize:
-            estimator.net.hybridize()
-            estimator.val_net.hybridize()
-            estimator.loss.hybridize()
+            estimator.net.hybridize(static_alloc=True)
+            estimator.val_net.hybridize(static_alloc=True)
+            estimator.loss.hybridize(static_alloc=True)
         else:
             estimator.net.hybridize(active=False)
             estimator.val_net.hybridize(active=False)

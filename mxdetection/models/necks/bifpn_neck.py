@@ -148,7 +148,7 @@ class BiFPNUnit(nn.HybridBlock):
                         up = _upsample_conv(channels * 2 ** (i - 1), name=f'upto.{channels * 2 ** (i - 1)}_')
                     else:
                         up = nn.HybridLambda(lambda F, x: F.UpSampling(x, scale=2, sample_type='nearest'),
-                                             prefix='upsample')
+                                             prefix=f'upsample[{i}]')
                     self.top_down_upsampler.add(up)
 
             self.bottom_up_conv = nn.HybridSequential(prefix='bottom.up_')
@@ -257,7 +257,7 @@ class RecalibratedBiFPN(nn.HybridBlock):
 if __name__ == '__main__':
     ipts = ('C3', 'C4', 'C5')
 
-    fpn = RecalibratedBiFPN(ipts, channels=64, pre_conv=True, repeats=2, append_cbam=True, weighted_add=True,
+    fpn = RecalibratedBiFPN(ipts, channels=256, pre_conv=True, repeats=4, append_cbam=False, weighted_add=True,
                             prefix='BiFPN_',
                             expand_channels=False)
     fpn.initialize(verbose=True)
@@ -276,4 +276,4 @@ if __name__ == '__main__':
         print(o.shape)
     print(fpn.collect_params())
     outs_var = mx.sym.Group(fpn([mx.sym.var(n) for n in ipts]))
-    # mx.viz.plot_network(outs_var, shape=outs_shape).view()
+    mx.viz.plot_network(outs_var, shape=outs_shape).view()

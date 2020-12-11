@@ -36,10 +36,13 @@ class YOLOv3(ABCDetector):
         if 'prefix' not in kwargs:
             kwargs['prefix'] = self.__class__.__name__.lower() + '_'
         super().__init__(**kwargs)
+        backbone = build_backbone(backbone_cfg)
+        neck = build_neck(neck_cfg)
+        head = build_head(head_cfg)
         with self.name_scope():
-            self.backbone = build_backbone(backbone_cfg)
-            self.neck = build_neck(neck_cfg)
-            self.head = build_head(head_cfg)
+            self.backbone = backbone
+            self.neck = neck
+            self.head = head
             self._num_classes = num_class
             self._strides = strides
             self._anchors = anchors
