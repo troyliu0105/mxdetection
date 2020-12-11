@@ -70,7 +70,7 @@ def train(opts):
         estimator.metrics.DetectionAPMetric(val_metric)
     ]
 
-    processor = estimator.BatchIterProcessor(enable_hybridize=trainer_cfg['hybridize'])
+    processor = estimator.BatchIterProcessor(enable_hybridize=trainer_cfg.get('hybridize', False))
 
     trainer = Estimator(net,
                         loss_fn,

@@ -34,7 +34,10 @@ class DetectionAPMetric(EvalMetric):
         if self._log_flag:
             logging.info('\n' + table.table)
             if wandb.run:
-                wandb.log({'mAP': clz_ap[-1]})
+                headers = table.table_data[0]
+                data = table.table_data[1:]
+                wandb_table = wandb.Table(columns=headers, data=data)
+                wandb.log({'mAP': clz_ap[-1], 'APs': wandb_table}, commit=False)
             self._log_flag = False
         return clz_name[-1], clz_ap[-1]
 

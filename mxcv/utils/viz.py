@@ -32,7 +32,7 @@ def save_net_plot(net, filename=None, shape=(1, 3, 416, 416), format='pdf'):
             logging.warning(f"unable to copy net plot to {filename}")
     if wandb.run and format == 'png':
         img = wandb.Image(path, caption='Network Structure')
-        wandb.log({'network': img})
+        wandb.log({'network': img}, commit=False)
 
 
 def compute_net_params(net):
@@ -64,9 +64,9 @@ def print_summary(net: gluon.HybridBlock, ipt_shape=(1, 3, 416, 416)):
     ipt = mx.random.uniform(shape=ipt_shape, ctx=ctx)
     net.summary(ipt)
     table = compute_net_params(net)
-    logging.info("\n" + table.table)
+    logging.info("Parameter Statistics\n" + table.table)
     if wandb.run:
         headers = table.table_data[0]
         data = table.table_data[1:]
         wandb_table = wandb.Table(columns=headers, data=data)
-        wandb.log({"Parameters Statistics": wandb_table})
+        wandb.log({"Parameters Statistics": wandb_table}, commit=False)
