@@ -23,8 +23,8 @@ import os
 import time
 import warnings
 
-import wandb
 import numpy as np
+import wandb
 from mxnet.metric import CompositeEvalMetric, EvalMetric
 from mxnet.metric import Loss as metric_loss
 
@@ -326,16 +326,18 @@ class LoggingHandler(TrainBegin, TrainEnd, EpochBegin, EpochEnd, BatchBegin, Bat
         if isinstance(self.log_interval, int) or self.log_interval == 'epoch':
             epoch_time = time.time() - self.epoch_start
             msg = '[Epoch %d] Finished in %.3fs, ' % (self.current_epoch, epoch_time)
-            wandb_metric = {}
             for monitor in self.metrics:
                 name, value = monitor.get()
                 msg += '%s: %.4f, ' % (name, value)
-                wandb_metric[name] = float(value)
             estimator.logger.info(msg.rstrip(', '))
-            if wandb.run:
-                wandb.log(wandb_metric, step=self.current_epoch, commit=True)
         self.current_epoch += 1
         self.batch_index = 0
+        if wandb.run:
+            wandb_metric = {}
+            for monitor in self.metrics:
+                name, value = monitor.get()
+                wandb_metric[name] = float(value)
+            wandb.log(wandb_metric, step=self.current_epoch, commit=True)
 
 
 class CheckpointHandler(TrainBegin, BatchEnd, EpochEnd):
