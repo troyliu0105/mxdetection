@@ -105,8 +105,8 @@ class FusionAdd(nn.HybridBlock):
 
 class Recalibrate(nn.HybridBlock):
     def __init__(self, inputs, channels,
-                 expand_dilate=True, expand_channels=False,
-                 act_cfg=dict(type='ReLU'),
+                 cbam_expand_dilate=True, expand_channels=False,
+                 cbam_reduction=16, act_cfg=dict(type='ReLU'),
                  **kwargs):
         super(Recalibrate, self).__init__(**kwargs)
         with self.name_scope():
@@ -114,8 +114,8 @@ class Recalibrate(nn.HybridBlock):
             with self.cbam.name_scope():
                 for i in range(len(inputs)):
                     out_channels = channels * 2 ** i if expand_channels else channels
-                    self.cbam.add(CBAM(out_channels, reduction=16, act_cfg=act_cfg,
-                                       spatial_dilate=0 if not expand_dilate else len(inputs) - i,
+                    self.cbam.add(CBAM(out_channels, reduction=cbam_reduction, act_cfg=act_cfg,
+                                       spatial_dilate=0 if not cbam_expand_dilate else len(inputs) - i,
                                        prefix=f'[{inputs[i]}@{out_channels}]_'))
 
     def hybrid_forward(self, F, x, *args, **kwargs):
@@ -207,10 +207,9 @@ class BiFPNUnit(nn.HybridBlock):
 class RecalibratedBiFPN(nn.HybridBlock):
     def __init__(self,
                  inputs=('C3', 'C4', 'C5'),
-                 repeats=4, channels=256,
-                 pre_conv=False, append_cbam=False,
-                 expand_dilate=True, expand_channels=False,
-                 weighted_add=False, **kwargs):
+                 repeats=4, channels=256, pre_conv=False,
+                 append_cbam=False, cbam_reduction=16, cbam_expand_dilate=True,
+                 expand_channels=False, weighted_add=False, **kwargs):
         super(RecalibratedBiFPN, self).__init__(**kwargs)
         with self.name_scope():
             if pre_conv:
@@ -240,7 +239,7 @@ class RecalibratedBiFPN(nn.HybridBlock):
                                               expand_channels=expand_channels,
                                               prefix=f'unit[{idx}]_'))
             if append_cbam:
-                self.bifpns.add(Recalibrate(inputs, channels, expand_dilate, expand_channels,
+                self.bifpns.add(Recalibrate(inputs, channels, cbam_expand_dilate, expand_channels, cbam_reduction,
                                             prefix=f'recalibrate[{idx}]_'))
 
     def hybrid_forward(self, F, x, *args, **kwargs):
