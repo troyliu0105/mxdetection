@@ -69,7 +69,7 @@ optimizer:
   type: adam
   optimizer_params:
     learning_rate: &lr 0.001
-    wd: 0.0001
+    wd: 0.0005
   lr_scheduler:
     - mode: linear
       base_lr: 0
@@ -93,31 +93,32 @@ dataset:
   train:
     type: VOCDetectionRecordFile
     filename: data/trainval.rec
+  train_multiscale: true
   train_transform:
-    - type: ToNumpy
-    - type: Albumentations
-      transforms:
-        - type: HorizontalFlip
-          p: 0.5
-        - type: ColorJitter
-          brightness: 0.15
-          contrast: 0.5
-          saturation: 0.5
-          hue: 0.2
-          p: 0.5
-          always_apply: true
-        - type: Resize
-          height: 416
-          width: 416
-      bbox_params:
-        format: pascal_voc
-    - type: ToTensor
-    - type: Normalize
-    #    - type: YOLOv3DefaultTransform
-    #      height: 416
-    #      width: 416
-    #      mean: [0.485, 0.456, 0.406]
-    #      std: [0.229, 0.224, 0.225]
+    #    - type: ToNumpy
+    #    - type: Albumentations
+    #      transforms:
+    #        - type: HorizontalFlip
+    #          p: 0.5
+    #        - type: ColorJitter
+    #          brightness: 0.15
+    #          contrast: 0.5
+    #          saturation: 0.5
+    #          hue: 0.2
+    #          p: 0.5
+    #          always_apply: true
+    #        - type: Resize
+    #          height: 416
+    #          width: 416
+    #      bbox_params:
+    #        format: pascal_voc
+    #    - type: ToTensor
+    #    - type: Normalize
+    - type: YOLOv3DefaultTransform
+      height: 416
+      width: 416
+      mean: [ 0.485, 0.456, 0.406 ]
+      std: [ 0.229, 0.224, 0.225 ]
     - type: YOLOv3TargetGenerator
       num_class: 20
       strides: *strides
