@@ -208,7 +208,7 @@ class RecalibratedBiFPN(nn.HybridBlock):
     def __init__(self,
                  inputs=('C3', 'C4', 'C5'),
                  repeats=4, channels=256, pre_conv=False,
-                 append_cbam=False, cbam_reduction=16, cbam_expand_dilate=True,
+                 cbam=False, cbam_reduction=16, cbam_expand_dilate=True,
                  expand_channels=False, weighted_add=False, **kwargs):
         super(RecalibratedBiFPN, self).__init__(**kwargs)
         with self.name_scope():
@@ -238,7 +238,7 @@ class RecalibratedBiFPN(nn.HybridBlock):
                     self.bifpns.add(BiFPNUnit(inputs, channels, weighted_add=weighted_add,
                                               expand_channels=expand_channels,
                                               prefix=f'unit[{idx}]_'))
-            if append_cbam:
+            if cbam:
                 self.bifpns.add(Recalibrate(inputs, channels, cbam_expand_dilate, expand_channels, cbam_reduction,
                                             prefix=f'recalibrate[{idx}]_'))
 
@@ -256,7 +256,7 @@ class RecalibratedBiFPN(nn.HybridBlock):
 if __name__ == '__main__':
     ipts = ('C3', 'C4', 'C5')
 
-    fpn = RecalibratedBiFPN(ipts, channels=256, pre_conv=True, repeats=4, append_cbam=False, weighted_add=True,
+    fpn = RecalibratedBiFPN(ipts, channels=256, pre_conv=True, repeats=4, cbam=False, weighted_add=True,
                             prefix='BiFPN_',
                             expand_channels=False)
     fpn.initialize(verbose=True)

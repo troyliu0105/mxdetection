@@ -52,8 +52,9 @@ detector:
     channels: 256
     repeats: 4
     pre_conv: true
-    append_cbam: false
-    expand_dilate: false
+    cbam: false
+    cbam_reduction: 16
+    cbam_expand_dilate: false
     expand_channels: false
     weighted_add: true
   head_cfg:
