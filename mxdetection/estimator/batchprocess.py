@@ -4,14 +4,12 @@ from mxnet import autograd
 from mxnet.contrib.amp import amp
 
 from mxcv.estimator import BatchProcessor as BaseBatchProcessor
-from mxcv.estimator.event_handler import EpochBegin
+from mxcv.estimator.event_handler import EpochBegin, TrainBegin
 
 __all__ = ['BatchIterProcessor']
 
-CPU = mx.cpu()
 
-
-class BatchIterProcessor(BaseBatchProcessor, EpochBegin):
+class BatchIterProcessor(BaseBatchProcessor, EpochBegin, TrainBegin):
     def __init__(self, enable_hybridize=False):
         super(BatchIterProcessor, self).__init__()
         self._enable_hybridize = enable_hybridize
@@ -32,7 +30,7 @@ class BatchIterProcessor(BaseBatchProcessor, EpochBegin):
         """
         data = split_and_load(val_batch[0], ctx_list=estimator.context, batch_axis=0, even_split=False)
         label = split_and_load(val_batch[1], ctx_list=estimator.context, batch_axis=0, even_split=False)
-
+        mx.nd.waitall()
         det_bboxes = []
         det_ids = []
         det_scores = []
@@ -43,14 +41,14 @@ class BatchIterProcessor(BaseBatchProcessor, EpochBegin):
             # get prediction results
             with autograd.predict_mode():
                 ids, scores, bboxes = estimator.val_net(x)
-            det_ids.append(ids.as_in_context(CPU))
-            det_scores.append(scores.as_in_context(CPU))
+            det_ids.append(ids.copy().asnumpy())
+            det_scores.append(scores.copy().asnumpy())
             # clip to image size
-            det_bboxes.append(bboxes.clip(0, val_batch[0].shape[2]).as_in_context(CPU))
+            det_bboxes.append(bboxes.clip(0, val_batch[0].shape[2]).copy().asnumpy())
             # split ground truths
-            gt_ids.append(y.slice_axis(axis=-1, begin=4, end=5).as_in_context(CPU))
-            gt_bboxes.append(y.slice_axis(axis=-1, begin=0, end=4).as_in_context(CPU))
-            gt_difficults.append(y.slice_axis(axis=-1, begin=5, end=6).as_in_context(CPU) if y.shape[-1] > 5 else None)
+            gt_ids.append(y.slice_axis(axis=-1, begin=4, end=5).copy().asnumpy())
+            gt_bboxes.append(y.slice_axis(axis=-1, begin=0, end=4).copy().asnumpy())
+            gt_difficults.append(y.slice_axis(axis=-1, begin=5, end=6).copy().asnumpy() if y.shape[-1] > 5 else None)
         # pred = [estimator.val_net(x) for x in data]
         # loss = [estimator.val_loss(y_hat, y) for y_hat, y in zip(pred, label)]
         pred = (det_bboxes, det_ids, det_scores)
@@ -119,11 +117,12 @@ class BatchIterProcessor(BaseBatchProcessor, EpochBegin):
         return data, targets, gt_bboxes
 
     def epoch_begin(self, estimator, *args, **kwargs):
+        mx.nd.waitall()
+        for ctx in estimator.context:
+            ctx.empty_cache()
         if self._enable_hybridize:
-            estimator.net.hybridize(static_alloc=True)
-            estimator.val_net.hybridize(static_alloc=True)
-            estimator.loss.hybridize(static_alloc=True)
+            estimator.net.hybridize()
+            estimator.loss.hybridize()
         else:
             estimator.net.hybridize(active=False)
-            estimator.val_net.hybridize(active=False)
             estimator.loss.hybridize(active=False)

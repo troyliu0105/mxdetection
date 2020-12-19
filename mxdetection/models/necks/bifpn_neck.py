@@ -18,7 +18,7 @@ def _dw_conv_block(channels, kernel=1, stride=1, pad=0, dilate=1,
         block.add(ConvBundle(channels, kernel=kernel, stride=stride, pad=pad, dilation=dilate, groups=channels,
                              bias=False, norm_cfg=None, act_cfg=None, prefix='dw_'))
         block.add(ConvBundle(channels, kernel=1, stride=1, pad=0, dilation=1, groups=1,
-                             bias=True, norm_cfg=norm_cfg, act_cfg=act_cfg, prefix='pw_'))
+                             bias=False, norm_cfg=norm_cfg, act_cfg=act_cfg, prefix='pw_'))
     return block
 
 
@@ -57,7 +57,7 @@ class CBAM(nn.HybridBlock):
                                                act_cfg=None, prefix='spatialconv_')
             else:
                 self.spatial_conv = None
-            self.spatial = ConvBundle(1, kernel=3, stride=1, pad=1,
+            self.spatial = ConvBundle(1, kernel=7, stride=1, pad=3,
                                       bias=True, act_cfg=dict(type='Sigmoid'), prefix='spatialconv_')
 
     def hybrid_forward(self, F, x, *args, **kwargs):
@@ -85,21 +85,21 @@ class FusionAdd(nn.HybridBlock):
         self.num_input = num_input
         self.weighted = weighted
         self.epsilon = epsilon
-        if weighted:
+        if self.weighted:
             self.weight = self.params.get('weight',
                                           shape=(num_input,),
                                           init=mx.init.One(),
-                                          lr_mult=0.01,
+                                          lr_mult=1.0,
                                           differentiable=True)
-        else:
-            self.weight = self.params.get_constant('weight', mx.nd.ones(shape=(num_input,)))
 
     # noinspection PyMethodOverriding
     def hybrid_forward(self, F, x, weight):
         if self.weighted:
             weight = F.Activation(weight, act_type='relu')
             weight = F.broadcast_div(weight, F.sum(weight, keepdims=False) + self.epsilon)
-        out = F.add_n(*[F.broadcast_mul(w, ipt) for w, ipt in zip(F.split(weight, len(x), axis=0), x)])
+            out = F.add_n(*[F.broadcast_mul(w, ipt) for w, ipt in zip(F.split(weight, len(x), axis=0), x)])
+        else:
+            out = F.add_n(*x)
         return out
 
 
@@ -130,77 +130,78 @@ class BiFPNUnit(nn.HybridBlock):
         super(BiFPNUnit, self).__init__(**kwargs)
         act_cfg = dict(type='Swish')
         with self.name_scope():
-            self.top_down_conv = nn.HybridSequential(prefix='top.down_')
-            self.top_down_upsampler = nn.HybridSequential(prefix='top.down.upsampler_')
-            for i in range(len(levels)):
-                out_channels = channels * 2 ** (i + 1) if expand_channels else channels
+            # top-down branch
+            self.top_down_conv = nn.HybridSequential(prefix='td_')
+            self.top_down_upsampler = nn.HybridSequential(prefix='td.upsampler_')
+            for i, level in enumerate(levels[::-1]):
                 with self.top_down_conv.name_scope():
-                    block = nn.HybridSequential(prefix=f'[{levels[i]}]_')
+                    block = nn.HybridSequential(prefix=f'[{level}]_')
                     with block.name_scope():
                         if i > 0:
                             block.add(FusionAdd(2, weighted=weighted_add, prefix='fusion2_'))
                         block.add(build_activation(act_cfg))
-                        block.add(_dw_conv_block(out_channels, kernel=3, stride=1, pad=1, name='conv_'))
+                        block.add(
+                            _dw_conv_block(int(channels * 2 ** (len(levels) - i - 1)) if expand_channels else channels,
+                                           kernel=3, stride=1, pad=1, name='conv_'))
                     self.top_down_conv.add(block)
-            for i in range(len(levels) - 1, 0, -1):
-                with self.top_down_upsampler.name_scope():
-                    if expand_channels:
-                        up = _upsample_conv(channels * 2 ** (i - 1), name=f'upto.{channels * 2 ** (i - 1)}_')
-                    else:
-                        up = nn.HybridLambda(lambda F, x: F.UpSampling(x, scale=2, sample_type='nearest'),
-                                             prefix=f'upsample[{i}]')
-                    self.top_down_upsampler.add(up)
+                if i < len(levels) - 1:
+                    with self.top_down_upsampler.name_scope():
+                        if expand_channels:
+                            up = _upsample_conv(channels * 2 ** (len(levels) - i - 2),
+                                                name=f'upto.{channels * 2 ** (len(levels) - i - 2)}_')
+                        else:
+                            up = nn.HybridLambda(lambda F, x: F.UpSampling(x, scale=2, sample_type='nearest'),
+                                                 prefix=f'upsample[{i}]')
+                        self.top_down_upsampler.add(up)
 
-            self.bottom_up_conv = nn.HybridSequential(prefix='bottom.up_')
-            self.bottom_up_downsampler = nn.HybridSequential(prefix='bottom.up.downsampler_')
-            for i in range(len(levels)):
-                out_channels = channels * 2 ** i if expand_channels else channels
+            # bottom-up branch
+            self.bottom_up_conv = nn.HybridSequential(prefix='bu_')
+            self.bottom_up_downsampler = nn.HybridSequential(prefix='bu.downsampler_')
+            for i, level in enumerate(levels):
                 with self.bottom_up_conv.name_scope():
-                    block = nn.HybridSequential(prefix=f'[{levels[i]}]_')
+                    block = nn.HybridSequential(prefix=f'[{level}]_')
                     with block.name_scope():
                         if i == 0:
                             block.add(FusionAdd(2, weighted=weighted_add, prefix='fusion2_'))
                         else:
                             block.add(FusionAdd(3, weighted=weighted_add, prefix='fusion3_'))
                         block.add(build_activation(act_cfg))
-                        block.add(_dw_conv_block(out_channels, kernel=3, stride=1, pad=1, name='conv_'))
+                        block.add(_dw_conv_block(channels * 2 ** i if expand_channels else channels,
+                                                 kernel=3, stride=1, pad=1, name='conv_'))
                     self.bottom_up_conv.add(block)
-            for i in range(1, len(levels)):
-                with self.bottom_up_downsampler.name_scope():
-                    if expand_channels:
-                        down = ConvBundle(channels * 2 ** i, kernel=1, stride=2, prefix=f'downto.{channels * 2 ** i}_')
-                    else:
-                        down = nn.MaxPool2D(pool_size=3, strides=2, padding=1)
-                    self.bottom_up_downsampler.add(down)
+                if i < len(levels) - 1:
+                    with self.bottom_up_downsampler.name_scope():
+                        if expand_channels:
+                            down = ConvBundle(channels * 2 ** (len(levels) - i - 2), kernel=1, stride=2,
+                                              prefix=f'downto.{channels * 2 ** (len(levels) - i - 2)}_')
+                        else:
+                            down = nn.MaxPool2D(pool_size=3, strides=2, padding=1)
+                        self.bottom_up_downsampler.add(down)
 
     def hybrid_forward(self, F, x: List, *args, **kwargs):
+        # deep to shallow
         features = x[::-1]
         y = features[0]
         td_features = []
-        for i, bf in enumerate(features):
-            if i == 0:
-                bf = self.top_down_conv[i](bf)
-            else:
-                bf = self.top_down_conv[i][0]([bf, y])
-                bf = self.top_down_conv[i][1:](bf)
-            td_features.append(bf)
+        for i, feat in enumerate(features):
+            feat = feat if i == 0 else [feat, y]
+            td = self.top_down_conv[i](feat)
+            td_features.append(td)
             if i < len(features) - 1:
-                y = self.top_down_upsampler[i](bf)
+                y = self.top_down_upsampler[i](td)
 
+        # shallow to deep
         td_features = td_features[::-1]
         y = None
         features = x
-        out_features = []
-        for i, (bf, tf) in enumerate(zip(features, td_features)):
-            if i == 0:
-                bf = self.bottom_up_conv[i][0]([bf, tf])
-            else:
-                bf = self.bottom_up_conv[i][0]([bf, tf, y])
-            bf = self.bottom_up_conv[i][1:](bf)
-            out_features.append(bf)
+        bu_features = []
+        for i, (feat, tf) in enumerate(zip(features, td_features)):
+            feat = [feat, tf] if i == 0 else [feat, tf, y]
+            bu = self.bottom_up_conv[i](feat)
+            bu_features.append(bu)
             if i < len(features) - 1:
-                y = self.bottom_up_downsampler[i](bf)
-        return out_features
+                y = self.bottom_up_downsampler[i](bu)
+        return bu_features
 
 
 @NECKS.register_module()

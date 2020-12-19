@@ -43,29 +43,32 @@ class YOLOv3(ABCDetector):
             self.backbone = backbone
             self.neck = neck
             self.head = head
-            self._num_classes = num_class
-            self._strides = strides
-            self._anchors = anchors
-            self._item_len = 4 + 1 + num_class
-            self.bbox2center = BBoxCornerToCenter(axis=-1, split=True)
-            self.bbox2corner = BBoxCenterToCorner(axis=-1, split=False)
+        self._num_classes = num_class
+        self._strides = strides
+        self._anchors = anchors
+        self._item_len = 4 + 1 + num_class
+        self.bbox2center = BBoxCornerToCenter(axis=-1, split=True)
+        self.bbox2corner = BBoxCenterToCorner(axis=-1, split=False)
 
     def hybrid_forward(self, F, x: Union[mx.nd.NDArray, mx.sym.Symbol], *args, **kwargs):
         x = self.backbone(x)
         x = self.neck(x)
         x = self.head(x)
-        if not autograd.is_training():
-            return self.generate_result(F, x[0])
-        return x
+        if autograd.is_training():
+            return x
+        return self.generate_result(F, x[0])
 
     def generate_result(self, F, result):
         # apply nms per class
-        if 0 < 0.45 < 1:
+        nms_thresh = 0.45
+        keep = 100
+        score_thresh = 0.01
+        if 0 < nms_thresh < 1:
             result = F.contrib.box_nms(
-                result, overlap_thresh=0.45, valid_thresh=0.01,
+                result, overlap_thresh=nms_thresh, valid_thresh=score_thresh,
                 topk=400, id_index=0, score_index=1, coord_start=2, force_suppress=False)
-            if 100 > 0:
-                result = result.slice_axis(axis=1, begin=0, end=100)
+            if keep > 0:
+                result = result.slice_axis(axis=1, begin=0, end=keep)
         ids = result.slice_axis(axis=-1, begin=0, end=1)
         scores = result.slice_axis(axis=-1, begin=1, end=2)
         bboxes = result.slice_axis(axis=-1, begin=2, end=None)

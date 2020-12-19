@@ -10,15 +10,24 @@ from gluoncv.data.batchify import Tuple, Stack, Pad
 from gluoncv import utils as gcv_utils
 from mxnet.gluon.data import DataLoader
 from mxnet.contrib import amp
+from mxnet import gluon, autograd
 import mxnet as mx
 
 from mxcv.estimator import Estimator, CheckpointHandler, ValidationHandler, LoggingHandler
 from mxcv.utils.parser import postprocess
 from mxcv.utils.log import setup_logger
-from mxcv.utils.viz import save_net_plot, print_summary
+from mxcv.utils.viz import print_summary
 from mxdetection import estimator
 from mxdetection.datasets import build_dataset, build_transformers
 from mxdetection.models import build_loss, build_detector
+
+
+def create_val_net(net):
+    ipt = mx.sym.var('data')
+    with autograd.predict_mode():
+        out = net(ipt)
+    val_net = gluon.SymbolBlock(out, ipt, params=net.collect_params())
+    return val_net
 
 
 # noinspection PyShadowingNames
@@ -39,8 +48,9 @@ def train(opts):
     net.initialize(ctx=trainer_cfg['ctx'], init=mx.init.Xavier(magnitude=2.5))
     loss_fn = build_loss(cfg.pop('loss'))
     optimizer = estimator.build_optimizer(cfg.pop('optimizer'), net)
+    val_net = create_val_net(net) if trainer_cfg.get('hybridize', False) else net
 
-    save_net_plot(net, opts.vizfile, format='png')
+    # save_net_plot(net, opts.vizfile, format='png')
     print_summary(net)
 
     data_cfg = cfg.pop('dataset')
@@ -74,6 +84,7 @@ def train(opts):
 
     trainer = Estimator(net,
                         loss_fn,
+                        val_net=val_net,
                         train_metrics=train_metrics,
                         val_metrics=test_metrics,
                         trainer=optimizer,
