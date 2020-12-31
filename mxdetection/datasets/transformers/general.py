@@ -11,7 +11,7 @@ from ..builder import TRANSFORMERS
 class ToTensor(AbstractTransformer):
     def do(self, img, target):
         if not isinstance(img, nd.NDArray):
-            img = nd.from_numpy(img)
+            img = nd.from_numpy(img.astype(np.float32))
         img = nd.image.to_tensor(img)
         target = nd.array(target)
         return img, target
