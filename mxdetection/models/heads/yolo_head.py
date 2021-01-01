@@ -117,7 +117,7 @@ class YOLOOutputV3(nn.HybridBlock):
 @HEADS.register_module()
 class YOLOv3Head(nn.HybridBlock):
     def __init__(self,
-                 anchors: List[List[List[int]]],
+                 anchors: List[List[int]],
                  strides: List[int],
                  num_classes=20,
                  **kwargs):

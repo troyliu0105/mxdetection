@@ -119,7 +119,7 @@ class Recalibrate(nn.HybridBlock):
                                        prefix=f'[{inputs[i]}@{out_channels}]_'))
 
     def hybrid_forward(self, F, x, *args, **kwargs):
-        y = [c(ipt) + ipt for c, ipt in zip(self.cbam, x)]
+        y = [F.elemwise_add(c(ipt), ipt) for c, ipt in zip(self.cbam, x)]
         return y
 
 
@@ -180,28 +180,25 @@ class BiFPNUnit(nn.HybridBlock):
 
     def hybrid_forward(self, F, x: List, *args, **kwargs):
         # deep to shallow
-        features = x[::-1]
-        y = features[0]
+        y = None
         td_features = []
-        for i, feat in enumerate(features):
+        for i, feat in enumerate(x[::-1]):
             feat = feat if i == 0 else [feat, y]
             td = self.top_down_conv[i](feat)
             td_features.append(td)
-            if i < len(features) - 1:
+            if i < len(x) - 1:
                 y = self.top_down_upsampler[i](td)
 
         # shallow to deep
-        td_features = td_features[::-1]
         y = None
-        features = x
         bu_features = []
-        for i, (feat, tf) in enumerate(zip(features, td_features)):
+        for i, (feat, tf) in enumerate(zip(x, td_features[::-1])):
             feat = [feat, tf] if i == 0 else [feat, tf, y]
             bu = self.bottom_up_conv[i](feat)
             bu_features.append(bu)
-            if i < len(features) - 1:
+            if i < len(x) - 1:
                 y = self.bottom_up_downsampler[i](bu)
-        return bu_features
+        return tuple(bu_features)
 
 
 @NECKS.register_module()
@@ -245,13 +242,11 @@ class RecalibratedBiFPN(nn.HybridBlock):
 
     def hybrid_forward(self, F, x, *args, **kwargs):
         if self.pre_conv:
-            y = [c(ipt) for c, ipt in zip(self.pre_conv, x)]
-        else:
-            y = x
+            x = [c(ipt) for c, ipt in zip(self.pre_conv, x)]
         # if self.cbam:
         #     y = [c(ipt) + ipt for c, ipt in zip(self.cbam, y)]
-        y = self.bifpns(y)
-        return y
+        x = self.bifpns(x)
+        return tuple(x)
 
 
 if __name__ == '__main__':

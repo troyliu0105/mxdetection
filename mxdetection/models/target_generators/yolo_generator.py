@@ -9,7 +9,7 @@ from mxnet.ndarray import NDArray
 __all__ = ['YOLOv3TargetGenerator']
 
 
-def _find_layer_and_anchor_idx(anchors: List[List[List[int]]],
+def _find_layer_and_anchor_idx(anchors: List[List[int]],
                                idx: int):
     assert idx >= 0
     for i, anchors_in_layer in enumerate(anchors):
