@@ -47,5 +47,11 @@ class Compose(AbstractTransformer):
 
 def build_transformers(cfg: List[Dict]):
     assert isinstance(cfg, List)
-    transformers = [build_from_cfg(c, TRANSFORMERS) for c in cfg]
-    return Compose(transformers)
+    # multi group transform
+    if isinstance(cfg[0], list):
+        transforms = []
+        for group in cfg:
+            transforms.append(Compose([build_from_cfg(c, TRANSFORMERS) for c in group]))
+    else:
+        transforms = Compose([build_from_cfg(c, TRANSFORMERS) for c in cfg])
+    return transforms

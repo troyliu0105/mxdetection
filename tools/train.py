@@ -6,6 +6,7 @@ import sys
 sys.path.append(os.curdir)
 import yaml
 import wandb
+from gluoncv.data import RandomTransformDataLoader
 from gluoncv.data.batchify import Tuple, Stack, Pad
 from gluoncv import utils as gcv_utils
 from mxnet.gluon.data import DataLoader
@@ -57,19 +58,29 @@ def train(opts):
     # batchify = Tuple([Stack(), Pad(axis=0, pad_val=-1)])
     batchify = Tuple(*([Stack() for _ in range(7)] + [Pad(axis=0, pad_val=-1) for _ in
                                                       range(1)]))
-    train_dataset = build_dataset(data_cfg.pop('train'))
-    train_dataset = train_dataset.transform(build_transformers(data_cfg.pop('train_transform')))
     val_dataset, val_metric = build_dataset(data_cfg.pop('test'))
-    val_dataset = val_dataset.transform(build_transformers(data_cfg.pop('test_transform')))
+    val_transformer = build_transformers(data_cfg.pop('test_transform'))
 
-    train_dataloader = DataLoader(train_dataset, trainer_cfg['batch_size'],
-                                  shuffle=True, last_batch="rollover",
-                                  batchify_fn=batchify,
-                                  num_workers=trainer_cfg['workers'], pin_memory=True,
-                                  timeout=60 * 60,
-                                  prefetch=trainer_cfg['batch_size'] * 3,
-                                  thread_pool=False)
-    val_dataloader = DataLoader(val_dataset, trainer_cfg['batch_size'],
+    train_dataset = build_dataset(data_cfg.pop('train'))
+    train_transform_cfg = data_cfg.pop('train_transform')
+    train_transformer = build_transformers(train_transform_cfg.pop('transforms', []))
+
+    if isinstance(train_transformer, list):
+        train_dataloader = RandomTransformDataLoader(train_transformer, train_dataset,
+                                                     interval=train_transform_cfg.pop('multiscale_iter', 10),
+                                                     batch_size=trainer_cfg['batch_size'], shuffle=True,
+                                                     last_batch="rollover", batchify_fn=batchify,
+                                                     num_workers=trainer_cfg['workers'], pin_memory=True,
+                                                     prefetch=trainer_cfg['batch_size'] * 3)
+    else:
+        train_dataloader = DataLoader(train_dataset.transform(train_transformer), trainer_cfg['batch_size'],
+                                      shuffle=True, last_batch="rollover",
+                                      batchify_fn=batchify,
+                                      num_workers=trainer_cfg['workers'], pin_memory=True,
+                                      timeout=60 * 60,
+                                      prefetch=trainer_cfg['batch_size'] * 3,
+                                      thread_pool=False)
+    val_dataloader = DataLoader(val_dataset.transform(val_transformer), trainer_cfg['batch_size'],
                                 shuffle=False, last_batch='keep',
                                 batchify_fn=Tuple(Stack(), Pad(axis=0, pad_val=-1)),
                                 num_workers=trainer_cfg['workers'], pin_memory=True,
