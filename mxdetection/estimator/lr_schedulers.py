@@ -2,14 +2,17 @@ from typing import Union, Dict, List
 
 from gluoncv.utils.lr_scheduler import LRSequential, LRScheduler
 
+from mxcv.estimator.lr_schedulers import CosineAnnealingScheduler
 from .builder import LR_SCHEDULERS, build_from_cfg
+
+LR_SCHEDULERS.register_module(CosineAnnealingScheduler)
 
 __all__ = ['build_lr_scheduler']
 
 
 def create_single_lr_scheduler(cfg: Dict):
     official_methods = ['constant', 'step', 'linear', 'poly', 'cosine']
-    if cfg['mode'] in official_methods:
+    if 'mode' in cfg and cfg['mode'] in official_methods:
         return LRScheduler(**cfg)
     else:
         # mode = cfg.pop('mode')

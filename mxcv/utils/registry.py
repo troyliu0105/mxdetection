@@ -4,6 +4,7 @@ Source: mmcv
 import inspect
 from functools import partial
 from typing import Union, Callable, Any
+from warnings import warn
 
 from mxnet import gluon
 
@@ -58,8 +59,10 @@ class Registry:
         if module_name is None:
             module_name = module_class.__name__
         if not force and module_name in self._module_dict:
-            raise KeyError(f'{module_name} is already registered '
-                           f'in {self.name}')
+            warn(f'{module_name} is already registered '
+                 f'in {self.name}')
+            # raise KeyError(f'{module_name} is already registered '
+            #                f'in {self.name}')
         self._module_dict[module_name] = module_class
 
     def deprecated_register_module(self, cls=None, force=False):
