@@ -2,7 +2,9 @@ import numpy as np
 import pyximport
 from mxnet import nd
 
-pyximport.install(reload_support=True, setup_args={'include_dirs': np.get_include()})
+pyximport.install(reload_support=True,
+                  setup_args={'include_dirs': [np.get_include()]},
+                  language_level=3)
 
 from .cython_operators import bbox as cython_bbox
 from .cython_operators import cpu_nms as cython_nms
