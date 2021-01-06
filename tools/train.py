@@ -19,8 +19,8 @@ from mxcv.utils.parser import postprocess
 from mxcv.utils.log import setup_logger
 from mxcv.utils.viz import print_summary
 from mxdetection import estimator
-from mxdetection.datasets import build_dataset, build_transformers
-from mxdetection.models import build_loss, build_detector
+from mxdetection.datasets import build_dataset, build_transformers, build_generator
+from mxdetection.models import build_detection_loss, build_detector
 
 
 def create_val_net(net):
@@ -47,7 +47,7 @@ def train(opts):
     net = build_detector(cfg.pop('detector'))
     # net.initialize(ctx=trainer_cfg['ctx'])
     net.initialize(ctx=trainer_cfg['ctx'], init=mx.init.Xavier(magnitude=2.5))
-    loss_fn = build_loss(cfg.pop('loss'))
+    loss_fn = build_detection_loss(cfg.pop('loss'))
     optimizer = estimator.build_optimizer(cfg.pop('optimizer'), net)
     val_net = create_val_net(net) if trainer_cfg.get('hybridize', False) else net
 
@@ -56,33 +56,37 @@ def train(opts):
 
     data_cfg = cfg.pop('dataset')
     # batchify = Tuple([Stack(), Pad(axis=0, pad_val=-1)])
-    batchify = Tuple(*([Stack() for _ in range(7)] + [Pad(axis=0, pad_val=-1) for _ in
-                                                      range(1)]))
+    # batchify = Tuple(*([Stack() for _ in range(7)] + [Pad(axis=0, pad_val=-1) for _ in
+    #                                                   range(1)]))
     val_dataset, val_metric = build_dataset(data_cfg.pop('test'))
     val_transformer = build_transformers(data_cfg.pop('test_transform'))
 
     train_dataset = build_dataset(data_cfg.pop('train'))
     train_transform_cfg = data_cfg.pop('train_transform')
     train_transformer = build_transformers(train_transform_cfg.pop('transforms', []))
+    train_generator, train_batchify = build_generator(train_transform_cfg.pop('generator'))
 
     if isinstance(train_transformer, list):
+        for tt in train_transformer:
+            tt.generator = train_generator
         train_dataloader = RandomTransformDataLoader(train_transformer, train_dataset,
                                                      interval=train_transform_cfg.pop('multiscale_iter', 10),
                                                      batch_size=trainer_cfg['batch_size'], shuffle=True,
-                                                     last_batch="rollover", batchify_fn=batchify,
+                                                     last_batch="rollover", batchify_fn=train_batchify,
                                                      num_workers=trainer_cfg['workers'], pin_memory=True,
                                                      prefetch=trainer_cfg['batch_size'] * 3)
     else:
+        train_transformer.generator = train_generator
         train_dataloader = DataLoader(train_dataset.transform(train_transformer), trainer_cfg['batch_size'],
                                       shuffle=True, last_batch="rollover",
-                                      batchify_fn=batchify,
+                                      batchify_fn=train_batchify,
                                       num_workers=trainer_cfg['workers'], pin_memory=True,
                                       timeout=60 * 60,
                                       prefetch=trainer_cfg['batch_size'] * 3,
                                       thread_pool=False)
     val_dataloader = DataLoader(val_dataset.transform(val_transformer), trainer_cfg['batch_size'],
                                 shuffle=False, last_batch='keep',
-                                batchify_fn=Tuple(Stack(), Pad(axis=0, pad_val=-1)),
+                                batchify_fn=Tuple([Stack(), Pad(axis=0, pad_val=-1)]),
                                 num_workers=trainer_cfg['workers'], pin_memory=True,
                                 timeout=60 * 60,
                                 thread_pool=False)

@@ -3,12 +3,12 @@ import mxnet as mx
 import numpy as np
 from mxnet import nd
 
-from .abc import AbstractTransformer
+from .base_transformer import BaseTransformer
 from ..builder import TRANSFORMERS
 
 
 @TRANSFORMERS.register_module()
-class ToTensor(AbstractTransformer):
+class ToTensor(BaseTransformer):
     def do(self, img, target):
         if not isinstance(img, nd.NDArray):
             img = nd.from_numpy(img.astype(np.float32))
@@ -18,7 +18,7 @@ class ToTensor(AbstractTransformer):
 
 
 @TRANSFORMERS.register_module()
-class Normalize(AbstractTransformer):
+class Normalize(BaseTransformer):
     def __init__(self,
                  mean=(0.485, 0.456, 0.406),
                  std=(0.229, 0.224, 0.225)):
@@ -31,7 +31,7 @@ class Normalize(AbstractTransformer):
 
 
 @TRANSFORMERS.register_module()
-class ToNumpy(AbstractTransformer):
+class ToNumpy(BaseTransformer):
 
     def do(self, img, target):
         if isinstance(img, nd.NDArray):
@@ -48,7 +48,7 @@ class ToNumpy(AbstractTransformer):
 
 
 @TRANSFORMERS.register_module()
-class YOLOv3DefaultTransform(AbstractTransformer):
+class YOLOv3DefaultTransform(BaseTransformer):
     def __init__(self,
                  height=416,
                  width=416,
