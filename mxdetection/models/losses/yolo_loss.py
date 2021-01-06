@@ -4,7 +4,7 @@ from gluoncv.model_zoo.yolo.yolo_target import YOLOV3DynamicTargetGeneratorSimpl
 from gluoncv.model_zoo.yolo.yolo_target import YOLOV3TargetMerger
 from mxnet import gluon, autograd
 
-from .iou_loss import IoULoss
+from .components.iou_loss import IoULoss
 
 
 class YOLOV3TargetMerger(gluon.HybridBlock):
