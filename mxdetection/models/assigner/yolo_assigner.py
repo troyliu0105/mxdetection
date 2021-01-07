@@ -48,7 +48,15 @@ class YOLOv3Assigner(BaseAssigner):
             best_iou = best_iou.max(axis=-1, keepdims=True)
 
             pos_mask = true_obj > 0.
-            neg_mask = best_iou < self._ignore_iou
+            # use -1 for ignored
+            objectness = F.where(pos_mask,
+                                 true_obj,
+                                 (best_iou > self._ignore_iou) * -1)
+            hard_objness_t = F.where(objectness > 0, F.ones_like(objectness), objectness)
+            # obj_mask := new_objness_mask, 1 for positive&negative, 0 for ignore
+            obj_mask = F.where(objectness > 0, objectness, objectness >= 0)
+
+            neg_mask = F.broadcast_logical_and(F.logical_not(hard_objness_t), obj_mask)
             # 1 for positive&negative, 0 for ignore
             if self._label_smooth:
                 class_mask = pos_mask.tile(reps=(self._num_class,))
@@ -64,15 +72,17 @@ class YOLOv3Assigner(BaseAssigner):
                 class_mask = F.sum_axis(class_mask, axis=-1, keepdims=True) > 0.
             else:
                 class_mask = pos_mask.copy()
-            pos_mask, neg_mask, class_mask = [
-                x.reshape(-1) for x in (pos_mask, neg_mask, class_mask)]
-            obj_mask = F.broadcast_logical_or(pos_mask, neg_mask)
+            pos_mask, neg_mask, obj_mask, class_mask = [
+                x.reshape(-1) for x in (pos_mask, neg_mask, obj_mask, class_mask)]
+            # obj_mask = F.broadcast_logical_or(pos_mask, neg_mask)
 
             obj_weight = pos_mask * self.obj_pos_weight + neg_mask * self.obj_neg_weight
             obj_weight = F.contrib.boolean_mask(obj_weight, obj_mask).expand_dims(axis=-1)
-            weight = F.contrib.boolean_mask(t_weight.reshape((-1, 1)), pos_mask)
+            box_weight = F.contrib.boolean_mask(t_weight.reshape((-1, 1)), pos_mask) \
+                if not self.use_bbox_target else None
+            cls_weight = None
             box_targets = F.contrib.boolean_mask(t_box.reshape((-1, 4)), pos_mask)
-            obj_targets = F.contrib.boolean_mask(true_obj.reshape((-1, 1)), obj_mask)
+            obj_targets = F.contrib.boolean_mask(hard_objness_t.reshape((-1, 1)), obj_mask)
             cls_targets = F.contrib.boolean_mask(true_cls.reshape((-1, self._num_class)), class_mask)
 
         # bbox loss
@@ -93,6 +103,6 @@ class YOLOv3Assigner(BaseAssigner):
         # clz_loss = self.clz_loss(cls_preds, true_cls)
         # loss = [bbox_loss, obj_loss, clz_loss]
         # loss = F.concat(*[l.sum() for l in loss], dim=0)
-        return (box_preds, box_targets, weight,
+        return (box_preds, box_targets, box_weight,
                 obj_preds, obj_targets, obj_weight,
-                cls_preds, cls_targets, None)
+                cls_preds, cls_targets, cls_weight)

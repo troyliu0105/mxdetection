@@ -27,7 +27,7 @@ class DetectionLoss(gluon.loss.Loss):
         bbox_loss = self.bbox_loss_fn(p_box, t_box, w_box)
         conf_loss = self.conf_loss_fn(p_conf, t_conf, w_conf)
         clz_loss = self.clz_loss_fn(p_clz, t_clz, w_clz)
-        loss = F.concat(*[l.sum() for l in (bbox_loss, conf_loss, clz_loss)], dim=0)
+        loss = F.concat(*[l.nansum() for l in (bbox_loss, conf_loss, clz_loss)], dim=0)
         return (loss,
                 [F.stop_gradient(x).copy() for x in (p_box, p_clz)],
                 [F.stop_gradient(x).copy() for x in (t_box, t_clz)])
