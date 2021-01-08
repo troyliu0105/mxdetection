@@ -58,21 +58,9 @@ class YOLOv3(ABCDetector):
             return x
         return self.generate_result(F, x[0])
 
-    def generate_result(self, F, result):
-        # apply nms per class
-        nms_thresh = 0.45
-        keep = 100
-        score_thresh = 0.01
-        if 0 < nms_thresh < 1:
-            result = F.contrib.box_nms(
-                result, overlap_thresh=nms_thresh, valid_thresh=score_thresh,
-                topk=400, id_index=0, score_index=1, coord_start=2, force_suppress=False)
-            if keep > 0:
-                result = result.slice_axis(axis=1, begin=0, end=keep)
-        ids = result.slice_axis(axis=-1, begin=0, end=1)
-        scores = result.slice_axis(axis=-1, begin=1, end=2)
-        bboxes = result.slice_axis(axis=-1, begin=2, end=None)
-        return tuple([ids, scores, bboxes])
+    @property
+    def num_class(self) -> int:
+        return self._num_classes
 
     def extract_training_targets(self,
                                  img: nd.NDArray,

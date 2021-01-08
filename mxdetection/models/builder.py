@@ -1,4 +1,5 @@
 from mxcv.utils.registry import Registry, build_from_cfg
+from .abc.detector import ABCDetector
 
 DETECTORS = Registry('detector')
 NECKS = Registry('neck')
@@ -28,5 +29,5 @@ def build_assigner(cfg):
     return build_from_cfg(cfg, ASSIGNER)
 
 
-def build_detector(cfg):
+def build_detector(cfg) -> ABCDetector:
     return build_from_cfg(cfg, DETECTORS)

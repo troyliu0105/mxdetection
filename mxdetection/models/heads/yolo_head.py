@@ -91,8 +91,6 @@ class YOLOOutputV3(nn.HybridBlock):
 
         box_centers = F.broadcast_add(F.sigmoid(raw_box_centers), offsets) * self._stride
         box_scales = F.broadcast_mul(F.exp(raw_box_scales), anchors)
-        confidence = F.sigmoid(objness)
-        class_score = F.broadcast_mul(F.sigmoid(class_pred), confidence)
         wh = box_scales / 2.0
         bbox = F.concat(box_centers - wh, box_centers + wh, dim=-1)
 
@@ -106,6 +104,8 @@ class YOLOOutputV3(nn.HybridBlock):
                     pred.slice_axis(axis=-1, begin=4, end=None).reshape((0, -3, -1)))
 
         # prediction per class
+        confidence = F.sigmoid(objness)
+        class_score = F.broadcast_mul(F.sigmoid(class_pred), confidence)
         bboxes = F.tile(bbox, reps=(self._classes, 1, 1, 1, 1))
         scores = F.transpose(class_score, axes=(3, 0, 1, 2)).expand_dims(axis=-1)
         ids = F.broadcast_add(scores * 0, F.arange(0, self._classes).reshape((0, 1, 1, 1, 1)))
