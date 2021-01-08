@@ -1,6 +1,10 @@
 import argparse
+import os
+import sys
 import time
 from typing import Union
+
+sys.path.append(os.curdir)
 
 import mxnet as mx
 import mxnet.autograd
@@ -15,12 +19,13 @@ from mxnet.gluon import SymbolBlock
 from mxnet.symbol import Symbol
 from terminaltables import AsciiTable
 
-from mxcv.utils.parser import postprocess
+from mxcv.utils.parser import postprocess, replace_ctx_string
 from mxdetection.models import build_detector, ABCDetector
 
 
 # noinspection PyShadowingNames
 def initialize_net(opts):
+    ctx = replace_ctx_string(ctx_raw=opts.ctx)
     if opts.cfg and opts.cfg != '':
         with open(opts.cfg) as fp:
             cfg = yaml.load(fp)
@@ -45,6 +50,7 @@ def initialize_net(opts):
             # noinspection PyProtectedMember
             nms_sym._set_attr(**nms_sym_attr)
             net = SymbolBlock(out, data, params=net.collect_params())
+    net.collect_params().reset_ctx(ctx)
     return net
 
 
@@ -117,6 +123,7 @@ def main(opts):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--cfg', required=False, type=str, help="config path")
+    parser.add_argument('--ctx', required=False, type=str, default='cpu')
     parser.add_argument('--symbol', type=str, default='', help="symbol file")
     parser.add_argument('--weight', type=str, default='', help="symbol weight or normal weight")
     parser.add_argument('--img-size', type=int, default=416)
