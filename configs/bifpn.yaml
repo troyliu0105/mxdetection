@@ -1,5 +1,5 @@
 trainer:
-  amp: false
+  amp: true
   ctx: &ctx 0
   epochs: 153
   batch_size: 8
@@ -40,8 +40,8 @@ detector:
   backbone_cfg:
     backend: gluoncv
     name: mobilenetv3_large
-    pretrained: true
-    #    pretrained: assets/0.2378-imagenet-mobilenetv3_large-0-best.params
+    #pretrained: true
+    pretrained: assets/0.2378-imagenet-mobilenetv3_large-0-best.params
     ctx: *ctx
     features:
       - _resunit6_hardswish0__mul0
@@ -84,6 +84,7 @@ optimizer:
   optimizer_params:
     learning_rate: &lr 0.001
     wd: 0.0005
+    momentum: 0.9
   lr_scheduler:
     - mode: linear
       base_lr: 0

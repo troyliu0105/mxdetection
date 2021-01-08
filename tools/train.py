@@ -45,8 +45,8 @@ def train(opts):
         amp.init()
 
     net = build_detector(cfg.pop('detector'))
-    # net.initialize(ctx=trainer_cfg['ctx'])
-    net.initialize(ctx=trainer_cfg['ctx'], init=mx.init.Xavier(magnitude=2.5))
+    net.initialize(ctx=trainer_cfg['ctx'])
+    # net.initialize(ctx=trainer_cfg['ctx'], init=mx.init.Xavier(magnitude=2.5))
     loss_fn = build_detection_loss(cfg.pop('loss'))
     optimizer = estimator.build_optimizer(cfg.pop('optimizer'), net)
     val_net = create_val_net(net) if trainer_cfg.get('hybridize', False) else net
