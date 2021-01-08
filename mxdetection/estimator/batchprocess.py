@@ -87,7 +87,7 @@ class BatchIterProcessor(BaseBatchProcessor, EpochBegin, TrainBegin):
         # label = split_and_load(train_batch[1], ctx_list=estimator.context, batch_axis=0, even_split=False)
         # targets = list(zip(*[split_and_load(t, ctx_list=estimator.context, batch_axis=0, even_split=False)
         #                      for t in estimator.net.extract_training_targets(*train_batch)]))
-        data, fixed_targets, gt_bboxes = self._get_data_and_label(train_batch, estimator.context)
+        data, labels, gts = self._get_data_and_label(train_batch, estimator.context)
 
         # fixed_targets = [split_and_load(train_batch[it], ctx_list=estimator.context, batch_axis=0)
         #                  for it in range(1, 7)]
@@ -95,34 +95,40 @@ class BatchIterProcessor(BaseBatchProcessor, EpochBegin, TrainBegin):
 
         with autograd.record():
             # bbox, raw_box_centers, raw_box_scales, objness, class_pred
-            preds = [estimator.net(x) for x in data]
-            loss = [estimator.loss(*pred, *target, gt_bbox) for pred, target, gt_bbox in
-                    zip(preds, fixed_targets, gt_bboxes)]
-
+            output = [estimator.net(x) for x in data]
+            loss, preds, targets = [], [], []
+            for out, label, gt in zip(output, labels, gts):
+                l, p, t = estimator.loss(out, label + (gt,))
+                loss.append(l)
+                preds.append(p)
+                targets.append(t)
+            loss = tuple(loss)
+            preds = tuple(preds)
+            targets = tuple(targets)
             if amp._amp_initialized:
                 with amp.scale_loss(loss, estimator.trainer) as scaled_loss:
                     autograd.backward(scaled_loss)
             else:
                 autograd.backward(loss)
 
-        return data, fixed_targets, preds, loss
+        return data, targets, preds, loss
 
     def _get_data_and_label(self, batch, ctx, batch_axis=0):
         data = batch[0]
         gt_bboxes = batch[-1]
         data = split_and_load(data, ctx_list=ctx, batch_axis=batch_axis)
-        targets = list(zip(*[split_and_load(batch[i], ctx_list=ctx, batch_axis=batch_axis)
-                             for i in range(1, len(batch) - 1)]))
+        labels = list(zip(*[split_and_load(batch[i], ctx_list=ctx, batch_axis=batch_axis)
+                            for i in range(1, len(batch) - 1)]))
         gt_bboxes = split_and_load(gt_bboxes, ctx_list=ctx, batch_axis=batch_axis)
-        return data, targets, gt_bboxes
+        return data, labels, gt_bboxes
 
-    def epoch_begin(self, estimator, *args, **kwargs):
-        mx.nd.waitall()
-        for ctx in estimator.context:
-            ctx.empty_cache()
+    def train_begin(self, estimator, *args, **kwargs):
+        # mx.nd.waitall()
+        # for ctx in estimator.context:
+        #     ctx.empty_cache()
         if self._enable_hybridize:
             estimator.net.hybridize()
-            estimator.loss.hybridize()
+            # estimator.loss.hybridize()
         else:
             estimator.net.hybridize(active=False)
-            estimator.loss.hybridize(active=False)
+            # estimator.loss.hybridize(active=False)

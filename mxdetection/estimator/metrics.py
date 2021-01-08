@@ -71,10 +71,8 @@ class IoUMetric(EvalMetric):
         ious = []
         for label, pred in zip(labels, preds):
             # pos_mask = label[2].slice_axis(axis=-1, begin=0, end=1)
-            pos_mask = label[3].slice_axis(axis=-1, begin=0, end=1)
-            pos_mask = pos_mask.reshape(-1)
-            pred_bboxes = nd.contrib.boolean_mask(pred[0].reshape(-1, 4), pos_mask)
-            target_bboxes = nd.contrib.boolean_mask(label[0].reshape(-1, 4), pos_mask)
+            pred_bboxes = pred[0]
+            target_bboxes = label[0]
             iou = bbox_iou(pred_bboxes, target_bboxes)
             ious.append(iou)
         return ious

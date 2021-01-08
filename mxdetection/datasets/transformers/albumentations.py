@@ -2,12 +2,12 @@ from typing import List, Dict, Any
 
 import albumentations
 
-from .abc import AbstractTransformer
+from .base_transformer import BaseTransformer
 from ..builder import TRANSFORMERS
 
 
 @TRANSFORMERS.register_module()
-class Albumentations(AbstractTransformer):
+class Albumentations(BaseTransformer):
     def __init__(self,
                  transforms: List[Dict],
                  bbox_params: Dict[str, Any] = None):

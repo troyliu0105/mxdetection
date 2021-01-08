@@ -22,4 +22,4 @@ class CosineAnnealingScheduler(LRScheduler):
 
     # noinspection PyAttributeOutsideInit
     def update(self, num_update):
-        self.learning_rate = self.base_lr * self.schedulers(num_update)
+        self.learning_rate = self.schedulers(num_update)

@@ -99,10 +99,11 @@ class YOLOOutputV3(nn.HybridBlock):
         if autograd.is_training():
             # during training, we don't need to convert whole bunch of info to detection results
             return (bbox.reshape((0, -1, 4)),
-                    raw_box_centers.reshape((0, -3, -1)),
-                    raw_box_scales.reshape((0, -3, -1)),
-                    objness.reshape((0, -3, -1)),
-                    class_pred.reshape((0, -3, -1)))
+                    F.concat(F.sigmoid(raw_box_centers.reshape((0, -3, -1))),
+                             raw_box_scales.reshape((0, -3, -1)), dim=-1),
+                    # objness.reshape((0, -3, -1)),
+                    # class_pred.reshape((0, -3, -1))
+                    pred.slice_axis(axis=-1, begin=4, end=None).reshape((0, -3, -1)))
 
         # prediction per class
         bboxes = F.tile(bbox, reps=(self._classes, 1, 1, 1, 1))

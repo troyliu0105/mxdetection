@@ -5,7 +5,7 @@ import numpy as np
 from gluoncv.nn.bbox import BBoxCornerToCenter, BBoxCenterToCorner
 from mxnet import nd
 
-from .abc import AbstractTransformer
+from .base_transformer import BaseTransformer
 from ..builder import TRANSFORMERS
 
 __all__ = ['YOLOv3TargetGenerator']
@@ -21,17 +21,21 @@ def _find_layer_and_anchor_idx(anchors: List[List[int]],
 
 
 @TRANSFORMERS.register_module()
-class YOLOv3TargetGenerator(AbstractTransformer):
+class YOLOv3TargetGenerator(BaseTransformer):
     def __init__(self,
                  num_class: int,
                  strides: List[int],
                  anchors: List[List[int]],
+                 use_secondary_anchors=False,
+                 secondary_iou=0.5,
                  **kwargs):
         super(YOLOv3TargetGenerator, self).__init__(**kwargs)
         self._num_classes = num_class
         self._strides = strides
         self._anchors = anchors
         self._item_len = 4 + 1 + num_class
+        self._use_secondary_anchors = use_secondary_anchors
+        self._secondary_iou = secondary_iou
         self.bbox2center = BBoxCornerToCenter(axis=-1, split=True)
         self.bbox2corner = BBoxCenterToCorner(axis=-1, split=False)
 
@@ -41,6 +45,7 @@ class YOLOv3TargetGenerator(AbstractTransformer):
         grid_x, grid_y = np.meshgrid(grid_x, grid_y)
         offsets = np.concatenate((grid_x[:, :, np.newaxis], grid_y[:, :, np.newaxis]), axis=-1)
         offsets = np.expand_dims(np.expand_dims(offsets, axis=0), axis=0)
+        # (1, 1, 128, 128, 2)
         self._offsets = nd.array(offsets)
 
     def do(self,
@@ -48,25 +53,35 @@ class YOLOv3TargetGenerator(AbstractTransformer):
            gts: nd.NDArray):
         """
         生成训练目标, bbox 为 padding 之后的
-        :param img:         输入图片 [B, 3, 416, 416]
+        :param img:    输入图片 [B, 3, 416, 416]
         :param gts:    GT 边框 [B, M, 5]，M 为边框个数
         :return:
         """
         # initializing targets
-        C, H, W = img.shape
+        B, C, H, W = img.shape
+        # [(1, 1, 52, 52), (1, 1, 26, 26), (1, 1, 13, 13)]
         xs = [nd.zeros(shape=(1, 1, H // s, W // s)) for s in self._strides]
+        # [(1, 1, 3, 2), (1, 1, 3, 2), (1, 1, 3, 2)]
         anchors = [nd.array(an).reshape(1, 1, -1, 2) for an in self._anchors]
+        # [(1, 52*52, 1, 2), (1, 26*26, 1, 2), (1, 13*13, 1, 2)]
         offsets = [nd.slice_like(self._offsets, x, axes=(2, 3)).reshape(1, -1, 1, 2) for x in xs]
-        gt_boxes = gts[..., :4][None]
-        gt_ids = gts[..., 4:5][None]
+        # (B, M, 4)
+        gt_boxes = gts[..., :4]
+        # (B, M, 1)
+        gt_ids = gts[..., 4:5]
 
         assert isinstance(anchors, (list, tuple))
+        # (9, 2)
         all_anchors = mx.nd.concat(*[a.reshape(-1, 2) for a in anchors], dim=0)
         assert isinstance(offsets, (list, tuple))
+        # (52^2+26^2+13^2, 2)
         all_offsets = mx.nd.concat(*[o.reshape(-1, 2) for o in offsets], dim=0)
+        # [3, 6, 9]
         num_anchors = np.cumsum([a.size // 2 for a in anchors])
+        # [52^2, 52^2+26^2, 52^2+26^2+13^2]
         num_offsets = np.cumsum([o.size // 2 for o in offsets])
-        _offsets = [0] + num_offsets.tolist()
+        # [0, 52^2, 52^2+26^2, 52^2+26^2+13^2]
+        pixel_offsets = [0] + num_offsets.tolist()
         assert isinstance(xs, (list, tuple))
         assert len(xs) == len(anchors) == len(offsets)
 
@@ -75,13 +90,17 @@ class YOLOv3TargetGenerator(AbstractTransformer):
         orig_width = W
         with mx.autograd.pause():
             # outputs
-            shape_like = all_anchors.reshape((1, -1, 2)) * all_offsets.reshape(
-                (-1, 1, 2)).expand_dims(0).repeat(repeats=gt_ids.shape[0], axis=0)
+            # [B, 52^2+26^2+13^2, 9, 2]
+            shape_like = (all_anchors.reshape((1, -1, 2)) * all_offsets.reshape((-1, 1, 2))) \
+                .expand_dims(0).repeat(repeats=gt_ids.shape[0], axis=0)
             center_targets: mx.nd.NDArray = mx.nd.zeros_like(shape_like)
             scale_targets: mx.nd.NDArray = mx.nd.zeros_like(center_targets)
+            # [B, 52^2+26^2+13^2, 9, 4]
             bbox_targets: mx.nd.NDArray = mx.nd.concat(*[s.copy() for s in [center_targets, scale_targets]], dim=-1)
             weights: mx.nd.NDArray = mx.nd.zeros_like(center_targets)
+            # [B, 52^2+26^2+13^2, 9, 1]
             objectness: mx.nd.NDArray = mx.nd.zeros_like(weights.split(axis=-1, num_outputs=2)[0])
+            # [B, 52^2+26^2+13^2, 9, 20]
             class_targets: mx.nd.NDArray = mx.nd.one_hot(objectness.squeeze(axis=-1), depth=self._num_classes)
             class_targets[:] = -1  # prefill -1 for ignores
 
@@ -92,7 +111,8 @@ class YOLOv3TargetGenerator(AbstractTransformer):
             shift_gt_boxes = mx.nd.concat(-0.5 * gtw, -0.5 * gth, 0.5 * gtw, 0.5 * gth, dim=-1)
             anchor_boxes = mx.nd.concat(0 * all_anchors, all_anchors, dim=-1)  # zero center anchors
             shift_anchor_boxes = self.bbox2corner(anchor_boxes)
-            ious = mx.nd.contrib.box_iou(shift_anchor_boxes, shift_gt_boxes).transpose((1, 0, 2))
+            # [B, A, M]
+            ious = mx.nd.contrib.box_iou(shift_anchor_boxes, shift_gt_boxes, format="corner").transpose((1, 0, 2))
             # real value is required to process, convert to Numpy
             # matches = ious.argmax(axis=1).asnumpy()  # (B, M)
             # 嵌套list，分别是 batch、gt_box, matched。如下
@@ -102,27 +122,31 @@ class YOLOv3TargetGenerator(AbstractTransformer):
                 batch = []
                 for gt_idx in range(ious.shape[2]):
                     gt_matched_anchor_idx = []
+                    # (A,)
                     ious_between_gt_anchors = ious[b, :, gt_idx]
-                    sorted_iou_anchor_idx = ious[b, :, gt_idx].argsort(is_ascend=False, dtype='int32').asnumpy()
+                    sorted_iou_anchor_idx = ious_between_gt_anchors.argsort(is_ascend=False, dtype='int32').asnumpy()
                     gt_matched_anchor_idx.append(sorted_iou_anchor_idx[0])
-                    # for anchor_idx in sorted_iou_anchor_idx[1:]:
-                    #     if ious_between_gt_anchors[anchor_idx] > 0.5:
-                    #         gt_matched_anchor_idx.append(anchor_idx)
-                    #     else:
-                    #         break
+                    if self._use_secondary_anchors:
+                        for anchor_idx in sorted_iou_anchor_idx[1:]:
+                            if ious_between_gt_anchors[anchor_idx] > self._secondary_iou:
+                                gt_matched_anchor_idx.append(anchor_idx)
+                            else:
+                                break
                     batch.append(gt_matched_anchor_idx)
                 matches.append(batch)
 
             valid_gts = (gt_boxes >= 0).asnumpy().prod(axis=-1)  # (B, M)
             np_gtx, np_gty, np_gtw, np_gth = [x.asnumpy() for x in [gtx, gty, gtw, gth]]
+            # (9, 2)
             np_anchors = all_anchors.asnumpy()
+            # (1, M, 1)
             np_gt_ids = gt_ids.asnumpy()
             # np_gt_mixratios = gt_mixratio.asnumpy() if gt_mixratio is not None else None
             # TODO(zhreshold): the number of valid gt is not a big number, therefore for loop
             # should not be a problem right now. Switch to better solution is needed.
-            for b, batch in enumerate(matches):
-                for g, gt_matches in enumerate(batch):
-                    for a, anchor_idx in enumerate(gt_matches):
+            for b, batch in enumerate(matches):  # which image
+                for g, gt_matches in enumerate(batch):  # which gt
+                    for anchor_idx in gt_matches:
                         if valid_gts[b, g] < 1:
                             break
                         match = anchor_idx
@@ -135,7 +159,7 @@ class YOLOv3TargetGenerator(AbstractTransformer):
                         loc_x = int(gtx / orig_width * width)
                         loc_y = int(gty / orig_height * height)
                         # write back to targets
-                        index = _offsets[nlayer] + loc_y * width + loc_x
+                        index = pixel_offsets[nlayer] + loc_y * width + loc_x
                         center_targets[b, index, match, 0] = gtx / orig_width * width - loc_x  # tx
                         center_targets[b, index, match, 1] = gty / orig_height * height - loc_y  # ty
                         scale_targets[b, index, match, 0] = np.log(max(gtw, 1) / np_anchors[match, 0])
@@ -162,6 +186,8 @@ class YOLOv3TargetGenerator(AbstractTransformer):
 
     def _slice(self, x, num_anchors, num_offsets):
         """since some stages won't see partial anchors, so we have to slice the correct targets"""
+        # num_anchors: [3, 6, 9]
+        # num_offsets: [52^2, 52^2+26^2, 52^2+26^2+13^2]
         # x with shape (B, N, A, 1 or 2)
         anchors = [0] + num_anchors.tolist()
         offsets = [0] + num_offsets.tolist()
@@ -170,3 +196,21 @@ class YOLOv3TargetGenerator(AbstractTransformer):
             y = x[:, offsets[i]:offsets[i + 1], anchors[i]:anchors[i + 1], :]
             ret.append(y.reshape((0, -3, -1)))
         return mx.nd.concat(*ret, dim=1)
+
+
+if __name__ == '__main__':
+    def _test():
+        anchors = [[33, 48, 50, 108, 127, 96],
+                   [78, 202, 178, 179, 130, 295, 130, 295],
+                   [332, 195, 228, 326, 366, 359]]
+        strides = [8, 16, 32]
+        generator = YOLOv3TargetGenerator(20, strides, anchors)
+        img = nd.random_normal(shape=(3, 416, 416))
+        gt_box = nd.array([[50, 50, 100., 100, 1],
+                           [0, 150, 100, 200, 2]])
+        args = generator(img, gt_box)
+        nd.save('out_gv', list(args))
+        print(args)
+
+
+    _test()

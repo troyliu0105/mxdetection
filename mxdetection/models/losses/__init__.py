@@ -1,8 +1,7 @@
 from gluoncv import loss as gv_loss
 from mxnet import gluon
 
-from .iou_loss import IoULoss
-from .yolo_loss import YOLOv3Loss
+from .components.iou_loss import IoULoss
 from ..builder import LOSSES
 
 LOSSES.register_module('L1', module=gluon.loss.L1Loss)
